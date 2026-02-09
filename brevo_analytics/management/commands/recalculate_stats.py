@@ -5,6 +5,7 @@ Use this after updating the calculation logic or cleaning data.
 """
 
 from django.core.management.base import BaseCommand
+from django.conf import settings
 from brevo_analytics.models import BrevoMessage
 
 
@@ -19,6 +20,18 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        # Check if blacklist-only mode is enabled
+        brevo_config = getattr(settings, 'BREVO_ANALYTICS', {})
+        if brevo_config.get('BLACKLIST_ONLY_MODE', False):
+            self.stdout.write(
+                self.style.ERROR(
+                    'This command is disabled in BLACKLIST_ONLY_MODE.\n'
+                    'Database tables are unused in this mode. '
+                    'Use Blacklist Management to access data from Brevo API.'
+                )
+            )
+            return
+
         message_id = options.get('message_id')
 
         if message_id:

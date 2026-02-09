@@ -22,10 +22,21 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        # Check if blacklist-only mode is enabled
+        brevo_config = getattr(settings, 'BREVO_ANALYTICS', {})
+        if brevo_config.get('BLACKLIST_ONLY_MODE', False):
+            self.stdout.write(
+                self.style.ERROR(
+                    'This command is disabled in BLACKLIST_ONLY_MODE.\n'
+                    'Database tables are unused in this mode. '
+                    'Use Blacklist Management to access data from Brevo API.'
+                )
+            )
+            return
+
         dry_run = options['dry_run']
 
         # Get excluded domains from configuration
-        brevo_config = getattr(settings, 'BREVO_ANALYTICS', {})
         excluded_domains = brevo_config.get('EXCLUDED_RECIPIENT_DOMAINS', ['openpolis.it', 'deppsviluppo.org'])
 
         if isinstance(excluded_domains, str):

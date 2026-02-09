@@ -317,6 +317,21 @@ python manage.py import_brevo_logs test.csv
 # Output: "Import is disabled in BLACKLIST_ONLY_MODE..."
 ```
 
+### Disabled Commands
+
+When `BLACKLIST_ONLY_MODE = True`, these management commands are disabled:
+
+- **`import_brevo_logs`** - Historical data import from CSV
+- **`clean_internal_emails`** - Database cleanup of internal domains
+- **`recalculate_stats`** - Statistics recalculation for messages
+- **`verify_brevo_stats`** - API verification against local database
+
+All commands will exit immediately with a clear error message:
+```
+This command is disabled in BLACKLIST_ONLY_MODE.
+Database tables are unused in this mode. Use Blacklist Management to access data from Brevo API.
+```
+
 ## File Structure
 
 ```

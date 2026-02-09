@@ -38,6 +38,18 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        # Check if blacklist-only mode is enabled
+        brevo_config = getattr(settings, 'BREVO_ANALYTICS', {})
+        if brevo_config.get('BLACKLIST_ONLY_MODE', False):
+            self.stdout.write(
+                self.style.ERROR(
+                    'This command is disabled in BLACKLIST_ONLY_MODE.\n'
+                    'Database tables are unused in this mode. '
+                    'Use Blacklist Management to access data from Brevo API.'
+                )
+            )
+            return
+
         api_key = options['api_key'] or settings.BREVO_ANALYTICS.get('API_KEY', '')
 
         if not api_key:
