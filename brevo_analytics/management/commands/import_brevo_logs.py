@@ -61,6 +61,18 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        # Check if blacklist-only mode is enabled
+        brevo_config = getattr(settings, 'BREVO_ANALYTICS', {})
+        if brevo_config.get('BLACKLIST_ONLY_MODE', False):
+            self.stdout.write(
+                self.style.ERROR(
+                    'Import is disabled in BLACKLIST_ONLY_MODE.\n'
+                    'Use Blacklist Management in Django admin to access '
+                    'blacklist data directly from Brevo API.'
+                )
+            )
+            return
+
         csv_path = options['csv_path']
         dry_run = options['dry_run']
         clear_existing = options['clear']

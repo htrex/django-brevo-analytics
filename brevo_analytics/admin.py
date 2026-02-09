@@ -8,7 +8,6 @@ from .models import BrevoMessage, BrevoEmail
 from .i18n import get_translations, get_breadcrumb_translations
 
 
-@admin.register(BrevoMessage)
 class BrevoMessageAdmin(admin.ModelAdmin):
     """
     Admin that serves only the Vue.js SPA.
@@ -67,7 +66,6 @@ class BrevoMessageAdmin(admin.ModelAdmin):
         return False
 
 
-@admin.register(BrevoEmail)
 class BrevoEmailAdmin(admin.ModelAdmin):
     """
     Admin for Blacklist Management SPA.
@@ -123,3 +121,14 @@ class BrevoEmailAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+# Conditional registration based on BLACKLIST_ONLY_MODE
+brevo_config = getattr(settings, 'BREVO_ANALYTICS', {})
+blacklist_only = brevo_config.get('BLACKLIST_ONLY_MODE', False)
+
+if not blacklist_only:
+    # Register Message Analysis (analytics with subject grouping)
+    admin.site.register(BrevoMessage, BrevoMessageAdmin)
+
+# Always register Blacklist Management
+admin.site.register(BrevoEmail, BrevoEmailAdmin)

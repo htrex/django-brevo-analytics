@@ -20,9 +20,20 @@ def brevo_webhook(request):
     Configure in Brevo dashboard:
     URL: https://your-domain.com/brevo-analytics/webhook/
     Events: All transactional email events
+
+    Disabled when BLACKLIST_ONLY_MODE is enabled.
     """
-    # Verify webhook authentication (if configured)
     config = getattr(settings, 'BREVO_ANALYTICS', {})
+
+    # Check if blacklist-only mode is enabled
+    if config.get('BLACKLIST_ONLY_MODE', False):
+        logger.warning("Webhook called but BLACKLIST_ONLY_MODE is enabled")
+        return JsonResponse({
+            'status': 'disabled',
+            'message': 'Webhook is disabled in BLACKLIST_ONLY_MODE. Use Blacklist Management for direct API access.'
+        }, status=404)
+
+    # Verify webhook authentication (if configured)
     webhook_secret = config.get('WEBHOOK_SECRET')
 
     if webhook_secret:
