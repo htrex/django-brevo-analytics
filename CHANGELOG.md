@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-02-09
+
+### Added
+
+- **Blacklist-Only Mode**: New configuration flag for deployments that only need blacklist management without full email analytics
+  - **Configuration**: Set `BLACKLIST_ONLY_MODE = True` in `BREVO_ANALYTICS` settings
+  - **Use Case**: Ideal for scenarios where email subjects vary per client (e.g., Comin with customizable subjects), making subject-based message grouping impractical
+  - **Behavior**:
+    - Admin interface shows only "Blacklist Management" menu (hides "Message Analysis")
+    - Webhook endpoint returns 404 with informative message
+    - Import and statistics commands exit with clear error messages
+    - Database tables are created but remain unused
+    - Blacklist SPA works normally via direct Brevo API queries
+  - **Commands disabled**: `import_brevo_logs`, `clean_internal_emails`, `recalculate_stats`, `verify_brevo_stats`
+  - **Backwards compatible**: Default is `False`, existing installations continue working normally
+
+### Technical Details
+
+- **Admin Registration** (`admin.py`):
+  - Refactored from `@admin.register()` decorators to conditional registration
+  - `BrevoMessageAdmin` registered only when `BLACKLIST_ONLY_MODE = False`
+  - `BrevoEmailAdmin` always registered for blacklist management
+
+- **Webhook Handler** (`webhooks.py`):
+  - Added early mode check at function start
+  - Returns JSON response with `status: "disabled"` and HTTP 404 when mode enabled
+  - Includes logging for monitoring webhook calls in blacklist-only mode
+
+- **Management Commands**:
+  - `import_brevo_logs.py`: Added mode check, exits with styled error message
+  - `clean_internal_emails.py`: Added mode check to prevent database cleanup operations
+  - `recalculate_stats.py`: Added mode check to prevent statistics recalculation
+  - `verify_brevo_stats.py`: Added mode check to prevent API verification
+  - All commands show consistent error message directing users to Blacklist Management
+
+- **Test Coverage** (`tests.py`):
+  - Added `BlacklistOnlyModeTestCase` with 3 test methods
+  - Tests webhook returns 404 in blacklist-only mode
+  - Tests import command exits with error in blacklist-only mode
+  - Tests webhook works normally when mode disabled
+  - All 8 tests pass successfully
+
+- **Documentation**:
+  - Added comprehensive "Blacklist-Only Mode" section to `docs/README.md`
+  - Added detailed configuration guide to `CLAUDE.md` with verification steps
+  - Documented all disabled commands and expected behavior
+  - Included example configurations for blacklist-only deployments
+
 ## [0.2.6] - 2026-02-03
 
 ### Fixed
