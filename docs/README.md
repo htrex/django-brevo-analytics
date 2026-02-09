@@ -96,6 +96,66 @@ POST /webhook/                           # Brevo webhook endpoint
 
 ---
 
+## 🔧 Blacklist-Only Mode
+
+For use cases where email analytics are not needed (e.g., variable subjects per client), you can enable blacklist-only mode.
+
+### Configuration
+
+```python
+BREVO_ANALYTICS = {
+    'API_KEY': 'your-brevo-api-key',  # Required for blacklist access
+    'BLACKLIST_ONLY_MODE': True,      # Enable blacklist-only mode
+}
+```
+
+### Behavior
+
+When `BLACKLIST_ONLY_MODE = True`:
+
+- **Webhook**: Disabled (returns 404 with informative message)
+- **Import**: Disabled (command exits with error message)
+- **Admin Menu**: Shows only "Blacklist Management" (hides "Message Analysis")
+- **Database**: Tables created but unused (no data stored)
+- **Blacklist SPA**: Works normally via direct Brevo API queries
+
+### Use Cases
+
+- **Variable subjects**: Email subjects customized per client (e.g., Comin)
+  - Standard grouping by subject becomes impractical
+  - Only blacklist management needed
+
+- **Simple blacklist management**: Only need to check/remove blocked emails
+  - No need for delivery/open/click statistics
+  - Direct API access is sufficient
+
+- **No analytics required**: Don't need email campaign analytics
+  - Lighter deployment
+  - No historical data storage
+
+### Required Settings
+
+- **`API_KEY`**: Required for Brevo API access
+- **`ALLOWED_SENDERS`**: Optional (for multi-tenant filtering of blacklist entries)
+
+### Example
+
+```python
+# settings.py
+BREVO_ANALYTICS = {
+    'API_KEY': 'xkeysib-abc123...',
+    'BLACKLIST_ONLY_MODE': True,
+    'ALLOWED_SENDERS': ['info@example.com'],  # Optional: filter blacklist by sender
+}
+```
+
+After configuring, restart Django and access only:
+- **Admin**: `/admin/brevo_analytics/brevoemail/` (Blacklist Management)
+
+The Message Analysis menu will be hidden automatically.
+
+---
+
 ## 🗄️ Archived Documentation
 
 **Location:** `archive/`

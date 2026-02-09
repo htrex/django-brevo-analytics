@@ -1,7 +1,9 @@
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
+from django.core.management import call_command
 from datetime import datetime
-from .models import BrevoMessage, Email
+from io import StringIO
+from .models import BrevoMessage, BrevoEmail
 
 class BrevoModelsTestCase(TestCase):
     def setUp(self):
@@ -11,7 +13,7 @@ class BrevoModelsTestCase(TestCase):
         )
 
     def test_email_creation(self):
-        email = Email.objects.create(
+        email = BrevoEmail.objects.create(
             message=self.message,
             brevo_message_id="<test123@example.com>",
             recipient_email="test@example.com",
@@ -20,7 +22,7 @@ class BrevoModelsTestCase(TestCase):
         self.assertEqual(email.current_status, 'sent')
 
     def test_add_event(self):
-        email = Email.objects.create(
+        email = BrevoEmail.objects.create(
             message=self.message,
             brevo_message_id="<test456@example.com>",
             recipient_email="test2@example.com",
@@ -32,7 +34,7 @@ class BrevoModelsTestCase(TestCase):
         self.assertEqual(len(email.events), 1)
 
     def test_status_hierarchy(self):
-        email = Email.objects.create(
+        email = BrevoEmail.objects.create(
             message=self.message,
             brevo_message_id="<test789@example.com>",
             recipient_email="test3@example.com",
@@ -48,7 +50,7 @@ class BrevoModelsTestCase(TestCase):
     def test_message_stats_update(self):
         # Create multiple emails for the message
         for i in range(5):
-            email = Email.objects.create(
+            email = BrevoEmail.objects.create(
                 message=self.message,
                 brevo_message_id=f"<test{i}@example.com>",
                 recipient_email=f"test{i}@example.com",
@@ -71,7 +73,7 @@ class BrevoModelsTestCase(TestCase):
         self.assertEqual(self.message.delivery_rate, 60.0)
 
     def test_duplicate_event_prevention(self):
-        email = Email.objects.create(
+        email = BrevoEmail.objects.create(
             message=self.message,
             brevo_message_id="<testdup@example.com>",
             recipient_email="testdup@example.com",
@@ -85,3 +87,41 @@ class BrevoModelsTestCase(TestCase):
         self.assertTrue(added1)
         self.assertFalse(added2)  # Should not add duplicate
         self.assertEqual(len(email.events), 1)
+
+
+class BlacklistOnlyModeTestCase(TestCase):
+    """Tests for BLACKLIST_ONLY_MODE configuration flag"""
+
+    @override_settings(BREVO_ANALYTICS={'BLACKLIST_ONLY_MODE': True})
+    def test_webhook_disabled_in_blacklist_only_mode(self):
+        """Webhook should return 404 with message in blacklist-only mode"""
+        response = self.client.post(
+            '/admin/brevo_analytics/webhook/',
+            data='{"event": "delivered", "email": "test@example.com"}',
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 404)
+        data = response.json()
+        self.assertEqual(data['status'], 'disabled')
+        self.assertIn('BLACKLIST_ONLY_MODE', data['message'])
+
+    @override_settings(BREVO_ANALYTICS={'BLACKLIST_ONLY_MODE': True})
+    def test_import_disabled_in_blacklist_only_mode(self):
+        """Import command should exit with error in blacklist-only mode"""
+        out = StringIO()
+        call_command('import_brevo_logs', 'test.csv', stdout=out)
+        output = out.getvalue()
+        self.assertIn('disabled', output.lower())
+        self.assertIn('BLACKLIST_ONLY_MODE', output)
+
+    @override_settings(BREVO_ANALYTICS={'BLACKLIST_ONLY_MODE': False})
+    def test_webhook_enabled_when_mode_disabled(self):
+        """Webhook should work normally when blacklist-only mode is disabled"""
+        # This should not return 404 (will fail for other reasons like missing fields, but not 404)
+        response = self.client.post(
+            '/admin/brevo_analytics/webhook/',
+            data='{}',
+            content_type='application/json'
+        )
+        # Should get 400 (bad request) not 404 (disabled)
+        self.assertNotEqual(response.status_code, 404)

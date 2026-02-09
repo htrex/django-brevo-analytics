@@ -225,6 +225,98 @@ urlpatterns = [
 ]
 ```
 
+## Blacklist-Only Mode
+
+For use cases where email analytics are not needed (e.g., variable subjects per client like Comin), you can enable blacklist-only mode.
+
+### Configuration
+
+Add to your Django settings:
+
+```python
+BREVO_ANALYTICS = {
+    'API_KEY': 'your-brevo-api-key',  # Required for blacklist access
+    'BLACKLIST_ONLY_MODE': True,      # Enable blacklist-only mode
+}
+```
+
+### What Changes
+
+When `BLACKLIST_ONLY_MODE = True`:
+
+1. **Admin Interface**:
+   - ✅ "Blacklist Management" visible
+   - ❌ "Message Analysis" hidden
+
+2. **Webhook**:
+   - Returns 404 with message: `"Webhook is disabled in BLACKLIST_ONLY_MODE"`
+   - No event processing
+
+3. **Import Command**:
+   - `import_brevo_logs` exits with error
+   - Shows: `"Import is disabled in BLACKLIST_ONLY_MODE"`
+
+4. **Database**:
+   - Tables (`brevo_messages`, `brevo_emails`) are created but unused
+   - No data stored locally
+
+5. **Blacklist SPA**:
+   - Works normally
+   - Queries Brevo API directly for blacklist data
+   - No dependency on local database
+
+### Use Cases
+
+- **Variable Subjects**: Email subjects customized per client (grouping by subject impractical)
+- **Simple Blacklist Management**: Only need to check/remove blocked emails
+- **No Analytics**: Don't need delivery/open/click statistics
+
+### Example Configuration
+
+```python
+# settings.py for blacklist-only deployment
+INSTALLED_APPS = [
+    'django.contrib.admin',
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    'rest_framework',
+    'brevo_analytics',
+]
+
+BREVO_ANALYTICS = {
+    'API_KEY': 'xkeysib-abc123...',        # Required
+    'BLACKLIST_ONLY_MODE': True,           # Enable mode
+    'ALLOWED_SENDERS': ['info@comin.it'],  # Optional: filter blacklist
+}
+```
+
+### Verification
+
+After enabling blacklist-only mode:
+
+```bash
+# Start Django dev server
+python manage.py runserver
+
+# Access admin
+# You'll see only: "Blacklist Management"
+# "Message Analysis" will be hidden
+```
+
+**Webhook test** (should return 404):
+```bash
+curl -X POST http://localhost:8000/admin/brevo_analytics/webhook/ \
+  -H "Content-Type: application/json" \
+  -d '{"event": "test"}'
+# Response: {"status": "disabled", "message": "..."}
+```
+
+**Import test** (should exit with error):
+```bash
+python manage.py import_brevo_logs test.csv
+# Output: "Import is disabled in BLACKLIST_ONLY_MODE..."
+```
+
 ## File Structure
 
 ```
