@@ -56,6 +56,8 @@ class BrevoModelsTestCase(TestCase):
                 recipient_email=f"test{i}@example.com",
                 sent_at=timezone.now()
             )
+            # Add 'sent' event first (required for total_sent count)
+            email.add_event('sent', timezone.now())
             if i < 3:
                 email.add_event('delivered', timezone.now())
             if i < 2:
@@ -95,8 +97,9 @@ class BlacklistOnlyModeTestCase(TestCase):
     @override_settings(BREVO_ANALYTICS={'BLACKLIST_ONLY_MODE': True})
     def test_webhook_disabled_in_blacklist_only_mode(self):
         """Webhook should return 404 with message in blacklist-only mode"""
+        # Webhook is @csrf_exempt so no CSRF token needed
         response = self.client.post(
-            '/admin/brevo_analytics/webhook/',
+            '/brevo-analytics/webhook/',
             data='{"event": "delivered", "email": "test@example.com"}',
             content_type='application/json'
         )
@@ -117,9 +120,10 @@ class BlacklistOnlyModeTestCase(TestCase):
     @override_settings(BREVO_ANALYTICS={'BLACKLIST_ONLY_MODE': False})
     def test_webhook_enabled_when_mode_disabled(self):
         """Webhook should work normally when blacklist-only mode is disabled"""
+        # Webhook is @csrf_exempt so no CSRF token needed
         # This should not return 404 (will fail for other reasons like missing fields, but not 404)
         response = self.client.post(
-            '/admin/brevo_analytics/webhook/',
+            '/brevo-analytics/webhook/',
             data='{}',
             content_type='application/json'
         )
