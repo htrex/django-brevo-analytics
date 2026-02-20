@@ -41,7 +41,7 @@ A reusable Django package that integrates transactional email analytics from Bre
 ## Requirements
 
 - Python 3.8+
-- Django 4.2+
+- Django 4.2+ (including Django 5.x)
 - Django REST Framework 3.14+
 - PostgreSQL (for JSONField support)
 

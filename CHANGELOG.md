@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.4.0] - 2026-02-20
 
+### Changed
+
+- **Django 5.x Compatibility** (thanks to @htrex):
+  - Widened Django version constraint from `>=4.2,<5.0` to `>=4.2,<6.0`
+  - Replaced deprecated `unique_together` with `UniqueConstraint` in both `BrevoMessage` and `BrevoEmail` models
+  - Added migration 0006 to convert existing unique_together constraints to named UniqueConstraints
+  - Added Django 5.0 and 5.1 framework classifiers to pyproject.toml
+  - Fully backward compatible with Django 4.2 (UniqueConstraint available since Django 2.2)
+
 ### Fixed
 
 - **Documentation**: Corrected URL paths in README.md to align with frontend API implementation
