@@ -35,7 +35,9 @@ class BrevoMessage(models.Model):
     class Meta:
         db_table = 'brevo_messages'
         ordering = ['-sent_at', '-sent_date', 'subject']
-        unique_together = [['subject', 'sent_date']]
+        constraints = [
+            models.UniqueConstraint(fields=['subject', 'sent_date'], name='unique_brevo_message_subject_date'),
+        ]
         indexes = [
             models.Index(fields=['-sent_at']),
             models.Index(fields=['-sent_date']),
@@ -235,7 +237,9 @@ class BrevoEmail(models.Model):
     class Meta:
         db_table = 'brevo_emails'
         ordering = ['-sent_at']
-        unique_together = [['brevo_message_id', 'recipient_email']]
+        constraints = [
+            models.UniqueConstraint(fields=['brevo_message_id', 'recipient_email'], name='unique_brevo_email_mid_recipient'),
+        ]
         indexes = [
             models.Index(fields=['message', '-sent_at']),
             models.Index(fields=['recipient_email']),
