@@ -106,14 +106,16 @@ python manage.py migrate brevo_analytics
 # your_project/urls.py
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('admin/brevo_analytics/', include('brevo_analytics.urls')),
+    path('brevo-analytics/', include('brevo_analytics.urls')),  # API endpoints for Vue.js frontend
 ]
 ```
+
+**Note:** The API endpoints are mounted at `/brevo-analytics/` to serve the Vue.js SPA. The dashboard itself is accessed through Django admin (see step 6).
 
 ### 5. Set Up Brevo Webhook
 
 Configure webhook in Brevo dashboard:
-- URL: `https://yourdomain.com/admin/brevo_analytics/webhook/`
+- URL: `https://yourdomain.com/brevo-analytics/webhook/`
 - Events: All transactional email events
 - Add webhook secret to settings
 

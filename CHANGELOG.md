@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-02-20
+
+### Fixed
+
+- **Documentation**: Corrected URL paths in README.md to align with frontend API implementation
+  - Changed URL mounting from `/admin/brevo_analytics/` to `/brevo-analytics/` to match Vue.js SPA expectations
+  - Updated webhook URL documentation from `/admin/brevo_analytics/webhook/` to `/brevo-analytics/webhook/`
+  - Added clarifying note that API endpoints are mounted at `/brevo-analytics/` while dashboard access remains at Django admin URL `/admin/brevo_analytics/brevomessage/`
+
 ## [0.3.0] - 2026-02-09
 
 ### Added
