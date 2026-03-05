@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-03-05
+
+### Changed
+
+- **Date formatting improvements** in email list views (thanks to @htrex):
+  - `formatShortDate` now includes the year (e.g. "5 dic 2025" instead of "5 dic")
+  - `formatDateTime` now includes the year and uses a "date - time" separator (e.g. "5 dic 2025 - 12:15:32")
+  - Column header renamed from "Data" to "Data - Ora Invio" with a dedicated i18n key `sent_datetime`
+
 ## [0.5.0] - 2026-03-05
 
 ### Added
