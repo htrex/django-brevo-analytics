@@ -18,16 +18,21 @@ const formatDate = (dateValue, options = null) => {
 const formatDateTime = (dateValue, options = null) => {
   if (!dateValue) return ''
   const locale = getConfig().languageCode === 'it' ? 'it-IT' : 'en-US'
-  return new Date(dateValue).toLocaleString(locale, options || {
-    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit'
+  const d = new Date(dateValue)
+  const datePart = d.toLocaleDateString(locale, options || {
+    day: 'numeric', month: 'short', year: 'numeric'
   })
+  const timePart = d.toLocaleTimeString(locale, {
+    hour: '2-digit', minute: '2-digit', second: '2-digit'
+  })
+  return `${datePart} - ${timePart}`
 }
 
 const formatShortDate = (dateValue) => {
   if (!dateValue) return ''
   const locale = getConfig().languageCode === 'it' ? 'it-IT' : 'en-US'
   return new Date(dateValue).toLocaleDateString(locale, {
-    day: 'numeric', month: 'short'
+    day: 'numeric', month: 'short', year: 'numeric'
   })
 }
 
@@ -609,7 +614,7 @@ const MessageEmails = {
           <thead>
             <tr>
               <th>{{ t('recipient') }}</th>
-              <th>{{ t('date') }}</th>
+              <th>{{ t('sent_datetime') }}</th>
               <th>{{ t('status') }}</th>
             </tr>
           </thead>
@@ -762,7 +767,7 @@ const GlobalEmails = {
             <tr>
               <th>{{ t('subject') }}</th>
               <th>{{ t('recipient') }}</th>
-              <th>{{ t('date') }}</th>
+              <th>{{ t('sent_datetime') }}</th>
               <th>{{ t('status') }}</th>
             </tr>
           </thead>
