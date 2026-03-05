@@ -228,8 +228,9 @@ def brevo_webhook(request):
     if event_type == 'click':
         extra_data['url'] = payload.get('link', '')
 
-    # Open information
-    if event_type == 'opened':
+    # Open information (unique_opened and unique_proxy_open — 'opened' and
+    # 'proxy_open' are ignored via early return above)
+    if event_type in ('unique_opened', 'unique_proxy_open'):
         extra_data['ip'] = payload.get('ip', '')
         extra_data['user_agent'] = payload.get('user_agent', '')
 
