@@ -22,12 +22,14 @@ from brevo_analytics.models import BrevoMessage, BrevoEmail
 
 
 # Mapping from CSV st_text values to our event types
+# Events mapped to None are explicitly ignored (e.g. repeated 'Aperta'
+# events — only 'Prima apertura' / first opening is tracked).
 EVENT_TYPE_MAPPING = {
     'Inviata': 'sent',
     'Consegnata': 'delivered',
     'Caricata per procura': 'delivered',  # Alternative delivered status
     'Prima apertura': 'opened',
-    'Aperta': 'opened',
+    'Aperta': None,
     'Cliccata': 'clicked',
     'Hard bounce': 'bounced',
     'Soft bounce': 'bounced',
@@ -287,6 +289,10 @@ class Command(BaseCommand):
                         event_type_csv = event_raw['type']
                         event_type = EVENT_TYPE_MAPPING.get(event_type_csv, event_type_csv.lower())
 
+                        # Skip explicitly ignored events (e.g. repeated opens)
+                        if event_type is None:
+                            continue
+
                         event_timestamp_raw = event_raw['timestamp']
                         if isinstance(event_timestamp_raw, str):
                             event_timestamp = datetime.strptime(event_timestamp_raw, '%Y-%m-%d %H:%M:%S')
@@ -531,7 +537,10 @@ class Command(BaseCommand):
 
         for event_type, count in event_stats:
             mapped_type = EVENT_TYPE_MAPPING.get(event_type, event_type)
-            self.stdout.write(f"  {event_type} → {mapped_type}: {count:,}")
+            if mapped_type is None:
+                self.stdout.write(f"  {event_type} → (ignored): {count:,}")
+            else:
+                self.stdout.write(f"  {event_type} → {mapped_type}: {count:,}")
 
         # Emails with/without sent event
         with_sent = conn.execute("""

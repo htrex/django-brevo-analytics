@@ -113,20 +113,34 @@ def brevo_webhook(request):
     event_date = event_datetime.date()
 
     # Map Brevo event name to our event type
+    # Reference: https://developers.brevo.com/docs/transactional-webhooks
+    #
+    # Events mapped to None are explicitly ignored (e.g. repeated 'opened'
+    # events — only 'unique_opened' / first opening is tracked).
     event_mapping = {
         'request': 'sent',
         'delivered': 'delivered',
         'hard_bounce': 'bounced',
         'soft_bounce': 'bounced',
         'blocked': 'blocked',
+        'invalid_email': 'bounced',
+        'error': 'bounced',
         'spam': 'spam',
-        'unsubscribe': 'unsubscribed',
-        'opened': 'opened',
+        'unsubscribed': 'unsubscribed',
+        'opened': None,
+        'unique_opened': 'opened',
+        'proxy_open': None,
+        'unique_proxy_open': 'opened',
         'click': 'clicked',
         'deferred': 'deferred',
     }
 
     our_event_type = event_mapping.get(event_type, event_type)
+
+    # Explicitly ignored events
+    if our_event_type is None:
+        logger.debug(f"Ignoring {event_type} event for {email_address} (event type excluded)")
+        return JsonResponse({'status': 'ignored', 'reason': 'excluded_event_type'})
     is_sent_event = (our_event_type == 'sent')
     is_delivered_event = (our_event_type == 'delivered')
 
