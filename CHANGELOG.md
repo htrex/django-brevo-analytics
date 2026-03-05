@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-03-05
+
+### Added
+
+- **Complete Brevo webhook event mapping** (thanks to @htrex):
+  - Added `invalid_email` → `bounced` and `error` → `bounced` event types
+  - Added `unique_opened` → `opened` and `unique_proxy_open` → `opened` (first-open tracking)
+  - Added explicit `proxy_open` → ignored (repeated proxy opens suppressed)
+
+### Changed
+
+- **Ignore repeated open events**: `opened` and `proxy_open` events are now ignored; only `unique_opened` and `unique_proxy_open` (first opening) are tracked to avoid inflating open counts
+- **CSV import**: `Aperta` events (repeated opens) are now ignored; only `Prima apertura` is tracked, consistent with webhook behaviour
+- **Fix `unsubscribe` key**: corrected event mapping key from `unsubscribe` to `unsubscribed` to match Brevo API documentation
+- **Fix ip/user_agent capture**: open metadata (IP, user agent) now correctly captured for `unique_opened` and `unique_proxy_open` events
+
 ## [0.4.0] - 2026-02-20
 
 ### Changed
