@@ -1,3 +1,6 @@
+import json
+import time
+
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from django.core.management import call_command
@@ -153,3 +156,62 @@ class BlacklistOnlyModeTestCase(TestCase):
         )
         # Should get 400 (bad request) not 404 (disabled)
         self.assertNotEqual(response.status_code, 404)
+
+
+class WebhookTagTestCase(TestCase):
+    """Tests for tag extraction, storage, and tag-based grouping in webhook"""
+
+    def _post_webhook(self, payload):
+        """Helper to post a webhook payload"""
+        return self.client.post(
+            '/brevo-analytics/webhook/',
+            data=json.dumps(payload),
+            content_type='application/json'
+        )
+
+    @override_settings(BREVO_ANALYTICS={
+        'ALLOWED_SENDERS': ['noreply@example.com'],
+        'EXCLUDED_RECIPIENT_DOMAINS': [],
+    })
+    def test_webhook_saves_tags_on_email(self):
+        """Webhook should save tags from payload onto BrevoEmail.tags"""
+        payload = {
+            'event': 'request',
+            'message-id': '<tag-test-001@example.com>',
+            'email': 'recipient@example.com',
+            'subject': 'Esito CDM 2024-09-17 - Acme Corp',
+            'ts_event': int(time.time()),
+            'sender': 'noreply@example.com',
+            'tags': ['digest:42:Esito CDM 2024-09-17', 'customer:15:Acme Corp'],
+        }
+        response = self._post_webhook(payload)
+        self.assertEqual(response.status_code, 200)
+
+        email = BrevoEmail.objects.get(
+            brevo_message_id='<tag-test-001@example.com>',
+            recipient_email='recipient@example.com'
+        )
+        self.assertEqual(email.tags, ['digest:42:Esito CDM 2024-09-17', 'customer:15:Acme Corp'])
+
+    @override_settings(BREVO_ANALYTICS={
+        'ALLOWED_SENDERS': ['noreply@example.com'],
+        'EXCLUDED_RECIPIENT_DOMAINS': [],
+    })
+    def test_webhook_saves_empty_tags_when_absent(self):
+        """Webhook should save empty list when no tags in payload"""
+        payload = {
+            'event': 'request',
+            'message-id': '<tag-test-002@example.com>',
+            'email': 'recipient2@example.com',
+            'subject': 'No tags email',
+            'ts_event': int(time.time()),
+            'sender': 'noreply@example.com',
+        }
+        response = self._post_webhook(payload)
+        self.assertEqual(response.status_code, 200)
+
+        email = BrevoEmail.objects.get(
+            brevo_message_id='<tag-test-002@example.com>',
+            recipient_email='recipient2@example.com'
+        )
+        self.assertEqual(email.tags, [])

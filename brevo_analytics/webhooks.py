@@ -65,6 +65,7 @@ def brevo_webhook(request):
     message_id = payload.get('message-id')
     email_address = payload.get('email')
     subject = payload.get('subject', '')
+    tags = payload.get('tags', [])
     timestamp_unix = payload.get('ts_event')
     sender = payload.get('sender') or payload.get('from') or payload.get('sender_email', '')  # Brevo uses 'sender_email' in some events
 
@@ -105,7 +106,8 @@ def brevo_webhook(request):
 
     # Convert timestamp
     try:
-        event_datetime = datetime.fromtimestamp(timestamp_unix, tz=timezone.utc)
+        from datetime import timezone as dt_timezone
+        event_datetime = datetime.fromtimestamp(timestamp_unix, tz=dt_timezone.utc)
     except (ValueError, OSError):
         logger.error(f"Invalid timestamp: {timestamp_unix}")
         return HttpResponseBadRequest('Invalid timestamp')
@@ -212,7 +214,8 @@ def brevo_webhook(request):
             recipient_email=email_address,
             sent_at=event_datetime,
             current_status=initial_status,
-            events=initial_events
+            events=initial_events,
+            tags=tags,
         )
         logger.info(f"Created new email: {message_id} to {email_address} from {sender}")
 
