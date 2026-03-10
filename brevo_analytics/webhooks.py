@@ -173,9 +173,19 @@ def brevo_webhook(request):
 
     # 3. If this is a 'sent' or 'delivered' event and email doesn't exist, create it
     if email is None and is_creation_event:
-        # Get or create BrevoMessage (identified by subject + sent_date)
+        # Determine grouping subject based on configuration
+        group_subject = subject  # default: use email subject
+
+        if config.get('MESSAGE_GROUP_BY') == 'tag' and tags:
+            prefix = config.get('MESSAGE_TAG_PREFIX', 'digest')
+            tag_prefix = f"{prefix}:"
+            group_tag = next((t for t in tags if t.startswith(tag_prefix)), None)
+            if group_tag:
+                group_subject = group_tag
+
+        # Get or create BrevoMessage (identified by group_subject + sent_date)
         message, message_created = BrevoMessage.objects.get_or_create(
-            subject=subject,
+            subject=group_subject,
             sent_date=event_date,
             defaults={
                 'total_sent': 0,
@@ -183,7 +193,7 @@ def brevo_webhook(request):
         )
 
         if message_created:
-            logger.info(f"Created new message: {subject} - {event_date}")
+            logger.info(f"Created new message: {group_subject} - {event_date}")
 
         # Determine initial status and sent_at based on event type
         if is_delivered_event:

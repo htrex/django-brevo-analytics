@@ -215,3 +215,105 @@ class WebhookTagTestCase(TestCase):
             recipient_email='recipient2@example.com'
         )
         self.assertEqual(email.tags, [])
+
+    @override_settings(BREVO_ANALYTICS={
+        'ALLOWED_SENDERS': ['noreply@example.com'],
+        'EXCLUDED_RECIPIENT_DOMAINS': [],
+        'MESSAGE_GROUP_BY': 'tag',
+        'MESSAGE_TAG_PREFIX': 'digest',
+    })
+    def test_webhook_tag_grouping_uses_tag_as_subject(self):
+        """When MESSAGE_GROUP_BY='tag', matching tag should be used as BrevoMessage.subject"""
+        payload = {
+            'event': 'request',
+            'message-id': '<tag-group-001@example.com>',
+            'email': 'client1@example.com',
+            'subject': 'Esito CDM 2024-09-17 - Acme Corp',
+            'ts_event': int(time.time()),
+            'sender': 'noreply@example.com',
+            'tags': ['digest:42:Esito CDM 2024-09-17', 'customer:15:Acme Corp'],
+        }
+        response = self._post_webhook(payload)
+        self.assertEqual(response.status_code, 200)
+
+        email = BrevoEmail.objects.get(
+            brevo_message_id='<tag-group-001@example.com>',
+            recipient_email='client1@example.com'
+        )
+        self.assertEqual(email.message.subject, 'digest:42:Esito CDM 2024-09-17')
+
+    @override_settings(BREVO_ANALYTICS={
+        'ALLOWED_SENDERS': ['noreply@example.com'],
+        'EXCLUDED_RECIPIENT_DOMAINS': [],
+        'MESSAGE_GROUP_BY': 'tag',
+        'MESSAGE_TAG_PREFIX': 'digest',
+    })
+    def test_webhook_tag_grouping_aggregates_recipients(self):
+        """Multiple recipients with same tag should share one BrevoMessage"""
+        ts = int(time.time())
+
+        for i, client_name in enumerate(['Acme Corp', 'Beta Ltd', 'Gamma Inc']):
+            payload = {
+                'event': 'request',
+                'message-id': f'<tag-agg-{i:03d}@example.com>',
+                'email': f'client{i}@example.com',
+                'subject': f'Esito CDM 2024-09-17 - {client_name}',
+                'ts_event': ts,
+                'sender': 'noreply@example.com',
+                'tags': ['digest:42:Esito CDM 2024-09-17', f'customer:{i}:{client_name}'],
+            }
+            self._post_webhook(payload)
+
+        messages = BrevoMessage.objects.filter(subject='digest:42:Esito CDM 2024-09-17')
+        self.assertEqual(messages.count(), 1)
+        self.assertEqual(messages.first().emails.count(), 3)
+
+    @override_settings(BREVO_ANALYTICS={
+        'ALLOWED_SENDERS': ['noreply@example.com'],
+        'EXCLUDED_RECIPIENT_DOMAINS': [],
+        'MESSAGE_GROUP_BY': 'tag',
+        'MESSAGE_TAG_PREFIX': 'digest',
+    })
+    def test_webhook_tag_grouping_fallback_to_subject(self):
+        """When no tag matches the prefix, fall back to email subject"""
+        payload = {
+            'event': 'request',
+            'message-id': '<tag-fallback-001@example.com>',
+            'email': 'nontag@example.com',
+            'subject': 'Password reset',
+            'ts_event': int(time.time()),
+            'sender': 'noreply@example.com',
+            'tags': ['transactional:password_reset'],
+        }
+        response = self._post_webhook(payload)
+        self.assertEqual(response.status_code, 200)
+
+        email = BrevoEmail.objects.get(
+            brevo_message_id='<tag-fallback-001@example.com>',
+            recipient_email='nontag@example.com'
+        )
+        self.assertEqual(email.message.subject, 'Password reset')
+
+    @override_settings(BREVO_ANALYTICS={
+        'ALLOWED_SENDERS': ['noreply@example.com'],
+        'EXCLUDED_RECIPIENT_DOMAINS': [],
+    })
+    def test_webhook_default_subject_grouping_unchanged(self):
+        """Default behaviour (no MESSAGE_GROUP_BY) should use email subject"""
+        payload = {
+            'event': 'request',
+            'message-id': '<default-group-001@example.com>',
+            'email': 'default@example.com',
+            'subject': 'Esito CDM 2024-09-17 - Acme Corp',
+            'ts_event': int(time.time()),
+            'sender': 'noreply@example.com',
+            'tags': ['digest:42:Esito CDM 2024-09-17'],
+        }
+        response = self._post_webhook(payload)
+        self.assertEqual(response.status_code, 200)
+
+        email = BrevoEmail.objects.get(
+            brevo_message_id='<default-group-001@example.com>',
+            recipient_email='default@example.com'
+        )
+        self.assertEqual(email.message.subject, 'Esito CDM 2024-09-17 - Acme Corp')
