@@ -317,3 +317,60 @@ class WebhookTagTestCase(TestCase):
             recipient_email='default@example.com'
         )
         self.assertEqual(email.message.subject, 'Esito CDM 2024-09-17 - Acme Corp')
+
+
+class DisplaySubjectTestCase(TestCase):
+    """Tests for display_subject computed field in serializers"""
+
+    @override_settings(BREVO_ANALYTICS={
+        'MESSAGE_GROUP_BY': 'tag',
+        'MESSAGE_TAG_PREFIX': 'digest',
+    })
+    def test_display_subject_strips_prefix_and_id(self):
+        """display_subject should strip '{prefix}:{id}:' from tag-based subjects"""
+        from brevo_analytics.serializers import BrevoMessageSerializer
+        message = BrevoMessage.objects.create(
+            subject='digest:42:Esito CDM 2024-09-17',
+            sent_date=timezone.now().date()
+        )
+        serializer = BrevoMessageSerializer(message)
+        self.assertEqual(serializer.data['display_subject'], 'Esito CDM 2024-09-17')
+
+    @override_settings(BREVO_ANALYTICS={
+        'MESSAGE_GROUP_BY': 'tag',
+        'MESSAGE_TAG_PREFIX': 'digest',
+    })
+    def test_display_subject_non_tag_subject_unchanged(self):
+        """display_subject should return subject unchanged if it doesn't match the prefix"""
+        from brevo_analytics.serializers import BrevoMessageSerializer
+        message = BrevoMessage.objects.create(
+            subject='Password reset notification',
+            sent_date=timezone.now().date()
+        )
+        serializer = BrevoMessageSerializer(message)
+        self.assertEqual(serializer.data['display_subject'], 'Password reset notification')
+
+    @override_settings(BREVO_ANALYTICS={})
+    def test_display_subject_in_default_mode_equals_subject(self):
+        """In default subject grouping mode, display_subject == subject"""
+        from brevo_analytics.serializers import BrevoMessageSerializer
+        message = BrevoMessage.objects.create(
+            subject='Normal subject line',
+            sent_date=timezone.now().date()
+        )
+        serializer = BrevoMessageSerializer(message)
+        self.assertEqual(serializer.data['display_subject'], 'Normal subject line')
+
+    @override_settings(BREVO_ANALYTICS={
+        'MESSAGE_GROUP_BY': 'tag',
+        'MESSAGE_TAG_PREFIX': 'digest',
+    })
+    def test_display_subject_with_colons_in_title(self):
+        """display_subject should handle titles containing colons"""
+        from brevo_analytics.serializers import BrevoMessageSerializer
+        message = BrevoMessage.objects.create(
+            subject='digest:42:Esito CDM: seduta del 17/09',
+            sent_date=timezone.now().date()
+        )
+        serializer = BrevoMessageSerializer(message)
+        self.assertEqual(serializer.data['display_subject'], 'Esito CDM: seduta del 17/09')
