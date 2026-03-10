@@ -374,3 +374,106 @@ class DisplaySubjectTestCase(TestCase):
         )
         serializer = BrevoMessageSerializer(message)
         self.assertEqual(serializer.data['display_subject'], 'Esito CDM: seduta del 17/09')
+
+
+class ImportTagTestCase(TestCase):
+    """Tests for tag support in CSV import command"""
+
+    def _create_csv(self, rows):
+        """Create a temporary CSV file with the given rows.
+
+        Each row is a dict with keys: st_text, ts, sub, frm, email, tag, mid, link
+        """
+        import csv
+        import os
+        import tempfile
+        f = tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, newline='')
+        writer = csv.DictWriter(f, fieldnames=['st_text', 'ts', 'sub', 'frm', 'email', 'tag', 'mid', 'link'])
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+        f.close()
+        return f.name
+
+    @override_settings(BREVO_ANALYTICS={
+        'ALLOWED_SENDERS': ['noreply@example.com'],
+        'EXCLUDED_RECIPIENT_DOMAINS': [],
+    })
+    def test_import_stores_tag_on_email(self):
+        """CSV import should store the tag column value in BrevoEmail.tags"""
+        import os
+        csv_path = self._create_csv([
+            {
+                'st_text': 'Inviata', 'ts': '17-09-2024 10:00:00',
+                'sub': 'Esito CDM - Acme', 'frm': 'noreply@example.com',
+                'email': 'acme@example.com', 'tag': 'digest:42:Esito CDM 2024-09-17',
+                'mid': '<import-tag-001@example.com>', 'link': '',
+            },
+        ])
+        try:
+            call_command('import_brevo_logs', csv_path, stdout=StringIO())
+            email = BrevoEmail.objects.get(
+                brevo_message_id='import-tag-001@example.com',
+                recipient_email='acme@example.com'
+            )
+            self.assertEqual(email.tags, ['digest:42:Esito CDM 2024-09-17'])
+        finally:
+            os.unlink(csv_path)
+
+    @override_settings(BREVO_ANALYTICS={
+        'ALLOWED_SENDERS': ['noreply@example.com'],
+        'EXCLUDED_RECIPIENT_DOMAINS': [],
+        'MESSAGE_GROUP_BY': 'tag',
+        'MESSAGE_TAG_PREFIX': 'digest',
+    })
+    def test_import_tag_grouping(self):
+        """CSV import with MESSAGE_GROUP_BY='tag' should group by matching tag"""
+        import os
+        csv_path = self._create_csv([
+            {
+                'st_text': 'Inviata', 'ts': '17-09-2024 10:00:00',
+                'sub': 'Esito CDM - Acme', 'frm': 'noreply@example.com',
+                'email': 'acme@example.com', 'tag': 'digest:42:Esito CDM 2024-09-17',
+                'mid': '<import-grp-001@example.com>', 'link': '',
+            },
+            {
+                'st_text': 'Inviata', 'ts': '17-09-2024 10:01:00',
+                'sub': 'Esito CDM - Beta', 'frm': 'noreply@example.com',
+                'email': 'beta@example.com', 'tag': 'digest:42:Esito CDM 2024-09-17',
+                'mid': '<import-grp-002@example.com>', 'link': '',
+            },
+        ])
+        try:
+            call_command('import_brevo_logs', csv_path, stdout=StringIO())
+            messages = BrevoMessage.objects.filter(subject='digest:42:Esito CDM 2024-09-17')
+            self.assertEqual(messages.count(), 1)
+            self.assertEqual(messages.first().emails.count(), 2)
+        finally:
+            os.unlink(csv_path)
+
+    @override_settings(BREVO_ANALYTICS={
+        'ALLOWED_SENDERS': ['noreply@example.com'],
+        'EXCLUDED_RECIPIENT_DOMAINS': [],
+        'MESSAGE_GROUP_BY': 'tag',
+        'MESSAGE_TAG_PREFIX': 'digest',
+    })
+    def test_import_tag_grouping_fallback(self):
+        """CSV import with tag grouping should fall back to subject when no matching tag"""
+        import os
+        csv_path = self._create_csv([
+            {
+                'st_text': 'Inviata', 'ts': '17-09-2024 10:00:00',
+                'sub': 'Password reset', 'frm': 'noreply@example.com',
+                'email': 'user@example.com', 'tag': '',
+                'mid': '<import-fb-001@example.com>', 'link': '',
+            },
+        ])
+        try:
+            call_command('import_brevo_logs', csv_path, stdout=StringIO())
+            email = BrevoEmail.objects.get(
+                brevo_message_id='import-fb-001@example.com',
+                recipient_email='user@example.com'
+            )
+            self.assertEqual(email.message.subject, 'Password reset')
+        finally:
+            os.unlink(csv_path)

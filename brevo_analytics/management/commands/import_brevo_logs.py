@@ -146,7 +146,8 @@ class Command(BaseCommand):
                     st_text,
                     strptime(ts, '%d-%m-%Y %H:%M:%S') as event_timestamp,
                     link,
-                    frm
+                    frm,
+                    COALESCE(tag, '') as tag
                 FROM logs
                 WHERE mid IS NOT NULL
                   AND mid != 'NA'
@@ -187,7 +188,8 @@ class Command(BaseCommand):
                         'type': p.st_text,
                         'timestamp': p.event_timestamp,
                         'link': p.link
-                    } ORDER BY p.event_timestamp) as events
+                    } ORDER BY p.event_timestamp) as events,
+                    FIRST(p.tag ORDER BY p.event_timestamp) as tag
                 FROM parsed_logs p
                 INNER JOIN valid_emails v ON p.mid = v.mid AND p.email = v.email
                 GROUP BY p.mid, p.email
@@ -249,7 +251,7 @@ class Command(BaseCommand):
                 }
 
                 for row in batch:
-                    mid, recipient_email, subject, sender, sent_at_raw, events_raw = row
+                    mid, recipient_email, subject, sender, sent_at_raw, events_raw, tag = row
 
                     # Skip if already processed globally (safety check for duplicates in CSV)
                     combination_key = (mid, recipient_email)
@@ -268,11 +270,23 @@ class Command(BaseCommand):
 
                     sent_date = sent_at.date()
 
+                    # Build tags list from CSV tag column
+                    tags = [tag] if tag else []
+
+                    # Determine grouping subject
+                    group_subject = subject  # default: use email subject
+                    if brevo_config.get('MESSAGE_GROUP_BY') == 'tag' and tags:
+                        prefix = brevo_config.get('MESSAGE_TAG_PREFIX', 'digest')
+                        tag_prefix = f"{prefix}:"
+                        group_tag = next((t for t in tags if t.startswith(tag_prefix)), None)
+                        if group_tag:
+                            group_subject = group_tag
+
                     # Get or create BrevoMessage
-                    message_key = (subject, sent_date)
+                    message_key = (group_subject, sent_date)
                     if message_key not in messages_dict:
                         message, _ = BrevoMessage.objects.get_or_create(
-                            subject=subject,
+                            subject=group_subject,
                             sent_date=sent_date
                         )
                         messages_dict[message_key] = message
@@ -368,6 +382,7 @@ class Command(BaseCommand):
                         email.sent_at = sent_at
                         email.events = events_list
                         email.current_status = current_status
+                        email.tags = tags
                         emails_to_update.append(email)
                     else:
                         email = BrevoEmail(
@@ -377,7 +392,8 @@ class Command(BaseCommand):
                             recipient_email=recipient_email,
                             sent_at=sent_at,
                             events=events_list,
-                            current_status=current_status
+                            current_status=current_status,
+                            tags=tags,
                         )
                         emails_to_create.append(email)
 
@@ -388,7 +404,7 @@ class Command(BaseCommand):
                     if emails_to_update:
                         BrevoEmail.objects.bulk_update(
                             emails_to_update,
-                            ['message', 'sender_email', 'recipient_email', 'sent_at', 'events', 'current_status'],
+                            ['message', 'sender_email', 'recipient_email', 'sent_at', 'events', 'current_status', 'tags'],
                             batch_size=500
                         )
 
