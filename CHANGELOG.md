@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Tag-Based Message Grouping**: Optional grouping strategy that uses Brevo tags instead of email subjects
+  - New setting `MESSAGE_GROUP_BY`: `'subject'` (default, unchanged) or `'tag'`
+  - New setting `MESSAGE_TAG_PREFIX`: prefix to match grouping tags (default: `'digest'`)
+  - Tag format convention: `{prefix}:{id}:{display_title}`
+  - New `tags` JSONField on `BrevoEmail` model — stores all tags from webhook/CSV regardless of grouping mode
+  - New `display_subject` computed field in API serializers — strips prefix and ID for human-readable display
+  - Webhook: extracts tags from payload, applies tag-based grouping when configured
+  - CSV import: reads `tag` column, stores on BrevoEmail, applies tag-based grouping when configured
+  - Graceful fallback: when no matching tag found, uses email subject (same as default mode)
+  - Full backward compatibility: no changes to BrevoMessage model, no migration on that table
+  - New migration 0007: adds `tags` JSONField to BrevoEmail (default=list)
+
+### Fixed
+
+- **Django 5.2 compatibility**: Fixed `timezone.utc` deprecation in webhook handler (use `datetime.timezone.utc`)
+
 ## [0.5.1] - 2026-03-05
 
 ### Changed
