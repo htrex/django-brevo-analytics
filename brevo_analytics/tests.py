@@ -90,6 +90,30 @@ class BrevoModelsTestCase(TestCase):
         self.assertFalse(added2)  # Should not add duplicate
         self.assertEqual(len(email.events), 1)
 
+    def test_email_tags_default(self):
+        """BrevoEmail.tags should default to an empty list"""
+        email = BrevoEmail.objects.create(
+            message=self.message,
+            brevo_message_id="<test_tags@example.com>",
+            recipient_email="tags@example.com",
+            sent_at=timezone.now()
+        )
+        self.assertIsInstance(email.tags, list)
+        self.assertEqual(email.tags, [])
+
+    def test_email_tags_stored(self):
+        """BrevoEmail.tags should store and retrieve tag arrays"""
+        tags = ["digest:42:Esito CDM 2024-09-17", "customer:15:Acme Corp"]
+        email = BrevoEmail.objects.create(
+            message=self.message,
+            brevo_message_id="<test_tags2@example.com>",
+            recipient_email="tags2@example.com",
+            sent_at=timezone.now(),
+            tags=tags
+        )
+        email.refresh_from_db()
+        self.assertEqual(email.tags, tags)
+
 
 class BlacklistOnlyModeTestCase(TestCase):
     """Tests for BLACKLIST_ONLY_MODE configuration flag"""

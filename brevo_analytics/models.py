@@ -231,6 +231,13 @@ class BrevoEmail(models.Model):
         help_text="Cached blacklist info from Brevo API: {reason, blocked_at, senders, checked_at}"
     )
 
+    # Tags from Brevo (stored for all emails regardless of grouping mode)
+    tags = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Tag array from Brevo webhook/CSV (e.g. ['digest:42:Title', 'customer:15:Name'])"
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
