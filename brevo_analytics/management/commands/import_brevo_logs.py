@@ -19,6 +19,7 @@ import requests
 import time
 from typing import Optional
 from brevo_analytics.models import BrevoMessage, BrevoEmail
+from brevo_analytics.sender_utils import get_allowed_senders, build_sender_sql_clause
 
 
 # Mapping from CSV st_text values to our event types
@@ -109,13 +110,9 @@ class Command(BaseCommand):
             """)
 
             # Get allowed senders from configuration
-            brevo_config = getattr(settings, 'BREVO_ANALYTICS', {})
-            allowed_senders = brevo_config.get('ALLOWED_SENDERS', ['info@infoparlamento.it'])
+            allowed_senders = get_allowed_senders()
 
-            if isinstance(allowed_senders, str):
-                allowed_senders = [allowed_senders]
-
-            self.stdout.write(f"\n🔒 Filtering by allowed senders: {', '.join(allowed_senders)}")
+            self.stdout.write(f"\n🔒 Filtering by allowed senders: {', '.join(allowed_senders) if allowed_senders else '(none — all senders accepted)'}")
 
             # Get excluded recipient domains from configuration (default: internal domains)
             excluded_domains = brevo_config.get('EXCLUDED_RECIPIENT_DOMAINS', ['openpolis.it', 'deppsviluppo.org'])
@@ -129,7 +126,7 @@ class Command(BaseCommand):
             self.stdout.write("\nPreparing data...")
 
             # Build WHERE clause for allowed senders
-            senders_clause = " OR ".join([f"frm = '{sender}'" for sender in allowed_senders])
+            senders_clause = build_sender_sql_clause(allowed_senders)
 
             # Build WHERE clause to exclude internal recipient domains
             excluded_clause = ""

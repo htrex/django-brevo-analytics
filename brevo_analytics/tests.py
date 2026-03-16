@@ -7,6 +7,12 @@ from django.core.management import call_command
 from datetime import datetime
 from io import StringIO
 from .models import BrevoMessage, BrevoEmail
+from .sender_utils import (
+    get_allowed_senders,
+    is_sender_allowed,
+    build_sender_filter_q,
+    build_sender_sql_clause,
+)
 
 class BrevoModelsTestCase(TestCase):
     def setUp(self):
@@ -477,3 +483,189 @@ class ImportTagTestCase(TestCase):
             self.assertEqual(email.message.subject, 'Password reset')
         finally:
             os.unlink(csv_path)
+
+
+class AllowedSenderMatchingTestCase(TestCase):
+    """Tests for domain-based and exact ALLOWED_SENDERS matching"""
+
+    # ── Unit: is_sender_allowed ──
+
+    def test_exact_match(self):
+        self.assertTrue(is_sender_allowed('info@example.com', ['info@example.com']))
+
+    def test_exact_match_case_insensitive(self):
+        self.assertTrue(is_sender_allowed('Info@Example.COM', ['info@example.com']))
+
+    def test_exact_no_match(self):
+        self.assertFalse(is_sender_allowed('other@example.com', ['info@example.com']))
+
+    def test_domain_match(self):
+        self.assertTrue(is_sender_allowed('alice@company.com', ['@company.com']))
+
+    def test_domain_match_case_insensitive(self):
+        self.assertTrue(is_sender_allowed('Alice@COMPANY.COM', ['@company.com']))
+
+    def test_domain_no_match(self):
+        self.assertFalse(is_sender_allowed('alice@other.com', ['@company.com']))
+
+    def test_mixed_list_exact_hit(self):
+        allowed = ['info@example.com', '@company.com']
+        self.assertTrue(is_sender_allowed('info@example.com', allowed))
+
+    def test_mixed_list_domain_hit(self):
+        allowed = ['info@example.com', '@company.com']
+        self.assertTrue(is_sender_allowed('bob@company.com', allowed))
+
+    def test_mixed_list_no_match(self):
+        allowed = ['info@example.com', '@company.com']
+        self.assertFalse(is_sender_allowed('bob@other.com', allowed))
+
+    def test_empty_list_allows_all(self):
+        self.assertTrue(is_sender_allowed('anyone@anywhere.com', []))
+
+    def test_none_sender_denied(self):
+        self.assertFalse(is_sender_allowed(None, ['@company.com']))
+
+    def test_empty_sender_denied(self):
+        self.assertFalse(is_sender_allowed('', ['@company.com']))
+
+    # ── Unit: get_allowed_senders ──
+
+    @override_settings(BREVO_ANALYTICS={'ALLOWED_SENDERS': ['a@b.com', '@c.com']})
+    def test_get_allowed_senders_list(self):
+        self.assertEqual(get_allowed_senders(), ['a@b.com', '@c.com'])
+
+    @override_settings(BREVO_ANALYTICS={'ALLOWED_SENDERS': 'single@b.com'})
+    def test_get_allowed_senders_string_wrapped(self):
+        self.assertEqual(get_allowed_senders(), ['single@b.com'])
+
+    @override_settings(BREVO_ANALYTICS={})
+    def test_get_allowed_senders_empty_default(self):
+        self.assertEqual(get_allowed_senders(), [])
+
+    # ── Unit: build_sender_filter_q ──
+
+    def test_filter_q_empty_list(self):
+        from django.db.models import Q
+        self.assertEqual(str(build_sender_filter_q([])), str(Q()))
+
+    def test_filter_q_exact_email(self):
+        q = build_sender_filter_q(['info@example.com'])
+        # Should contain iexact lookup and isnull
+        q_str = str(q)
+        self.assertIn('sender_email__iexact', q_str)
+        self.assertIn('sender_email__isnull', q_str)
+
+    def test_filter_q_domain_pattern(self):
+        q = build_sender_filter_q(['@company.com'])
+        q_str = str(q)
+        self.assertIn('sender_email__iendswith', q_str)
+        self.assertIn('sender_email__isnull', q_str)
+
+    # ── Unit: build_sender_sql_clause ──
+
+    def test_sql_clause_empty(self):
+        self.assertEqual(build_sender_sql_clause([]), '1=1')
+
+    def test_sql_clause_exact(self):
+        clause = build_sender_sql_clause(['info@example.com'])
+        self.assertEqual(clause, "LOWER(frm) = 'info@example.com'")
+
+    def test_sql_clause_domain(self):
+        clause = build_sender_sql_clause(['@company.com'])
+        self.assertEqual(clause, "LOWER(frm) LIKE '%@company.com'")
+
+    def test_sql_clause_mixed(self):
+        clause = build_sender_sql_clause(['info@example.com', '@company.com'])
+        self.assertIn("LOWER(frm) = 'info@example.com'", clause)
+        self.assertIn("LOWER(frm) LIKE '%@company.com'", clause)
+        self.assertIn(' OR ', clause)
+
+    def test_sql_clause_custom_column(self):
+        clause = build_sender_sql_clause(['info@example.com'], column='sender')
+        self.assertEqual(clause, "LOWER(sender) = 'info@example.com'")
+
+    # ── Integration: ORM filtering ──
+
+    @override_settings(BREVO_ANALYTICS={
+        'ALLOWED_SENDERS': ['@company.com'],
+        'EXCLUDED_RECIPIENT_DOMAINS': [],
+    })
+    def test_orm_domain_filter_includes_matching(self):
+        msg = BrevoMessage.objects.create(subject='Test', sent_date=timezone.now().date())
+        BrevoEmail.objects.create(
+            message=msg, brevo_message_id='<orm1@test>',
+            recipient_email='r@example.com', sent_at=timezone.now(),
+            sender_email='alice@company.com',
+        )
+        self.assertEqual(BrevoEmail.objects.count(), 1)
+
+    @override_settings(BREVO_ANALYTICS={
+        'ALLOWED_SENDERS': ['@company.com'],
+        'EXCLUDED_RECIPIENT_DOMAINS': [],
+    })
+    def test_orm_domain_filter_excludes_non_matching(self):
+        msg = BrevoMessage.objects.create(subject='Test', sent_date=timezone.now().date())
+        BrevoEmail.objects.create(
+            message=msg, brevo_message_id='<orm2@test>',
+            recipient_email='r@example.com', sent_at=timezone.now(),
+            sender_email='bob@other.com',
+        )
+        self.assertEqual(BrevoEmail.objects.count(), 0)
+
+    @override_settings(BREVO_ANALYTICS={
+        'ALLOWED_SENDERS': ['@company.com'],
+        'EXCLUDED_RECIPIENT_DOMAINS': [],
+    })
+    def test_orm_domain_filter_includes_null_sender(self):
+        msg = BrevoMessage.objects.create(subject='Test', sent_date=timezone.now().date())
+        BrevoEmail.objects.create(
+            message=msg, brevo_message_id='<orm3@test>',
+            recipient_email='r@example.com', sent_at=timezone.now(),
+            sender_email=None,
+        )
+        self.assertEqual(BrevoEmail.objects.count(), 1)
+
+    # ── Integration: webhook ──
+
+    @override_settings(BREVO_ANALYTICS={
+        'ALLOWED_SENDERS': ['@company.com'],
+        'EXCLUDED_RECIPIENT_DOMAINS': [],
+    })
+    def test_webhook_domain_match_accepted(self):
+        payload = {
+            'event': 'request',
+            'message-id': '<wh-domain-001@test>',
+            'email': 'recipient@example.com',
+            'subject': 'Domain Test',
+            'ts_event': int(time.time()),
+            'sender': 'alice@company.com',
+        }
+        response = self.client.post(
+            '/brevo-analytics/webhook/',
+            data=json.dumps(payload),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['status'], 'ok')
+
+    @override_settings(BREVO_ANALYTICS={
+        'ALLOWED_SENDERS': ['@company.com'],
+        'EXCLUDED_RECIPIENT_DOMAINS': [],
+    })
+    def test_webhook_domain_mismatch_rejected(self):
+        payload = {
+            'event': 'request',
+            'message-id': '<wh-domain-002@test>',
+            'email': 'recipient@example.com',
+            'subject': 'Domain Test',
+            'ts_event': int(time.time()),
+            'sender': 'bob@other.com',
+        }
+        response = self.client.post(
+            '/brevo-analytics/webhook/',
+            data=json.dumps(payload),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['reason'], 'unauthorized_sender')

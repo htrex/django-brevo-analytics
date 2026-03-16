@@ -3,6 +3,7 @@ from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from django.conf import settings
+from .sender_utils import get_allowed_senders, build_sender_filter_q
 
 
 class BrevoMessage(models.Model):
@@ -137,24 +138,10 @@ class BrevoEmailQuerySet(models.QuerySet):
 
     def filter_by_allowed_senders(self):
         """Filter to include only emails from authorized senders (multi-tenant security)"""
-        brevo_config = getattr(settings, 'BREVO_ANALYTICS', {})
-        allowed_senders = brevo_config.get('ALLOWED_SENDERS', [])
-
-        if isinstance(allowed_senders, str):
-            allowed_senders = [allowed_senders]
-
+        allowed_senders = get_allowed_senders()
         if not allowed_senders:
-            # No filtering if no senders configured
             return self
-
-        # Include emails with sender_email in allowed list OR sender_email is NULL
-        # (NULL for backward compatibility with old data before sender tracking)
-        from django.db.models import Q
-        filter_q = Q(sender_email__isnull=True)
-        for sender in allowed_senders:
-            filter_q |= Q(sender_email__iexact=sender)
-
-        return self.filter(filter_q)
+        return self.filter(build_sender_filter_q(allowed_senders))
 
 
 class BrevoEmailManager(models.Manager):
