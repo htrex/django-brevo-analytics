@@ -178,7 +178,65 @@ Compares local statistics with Brevo API to ensure data accuracy.
 
 - `API_KEY`: Brevo API key for bounce enrichment and blacklist management
 - `ALLOWED_SENDERS`: List of sender emails to filter (for multi-client accounts)
+- `EXCLUDED_RECIPIENT_DOMAINS`: List of email domains to exclude from analytics (e.g., internal/test domains)
+- `MESSAGE_GROUP_BY`: Grouping strategy — `'subject'` (default) or `'tag'` (see [Tag-Based Message Grouping](#tag-based-message-grouping))
+- `MESSAGE_TAG_PREFIX`: Tag prefix for grouping (default: `'digest'`, only used when `MESSAGE_GROUP_BY = 'tag'`)
 - `CLIENT_UID`: UUID for tracking client (defaults to generated UUID)
+
+## Tag-Based Message Grouping
+
+By default, emails are grouped into messages by subject line and sent date. For applications where email subjects are personalised per recipient (e.g. `"Report 2024-09-17 - ClientName"`), this causes each unique subject to create a separate message, fragmenting analytics.
+
+Tag-based grouping solves this by using [Brevo tags](https://developers.brevo.com/docs/transactional-webhooks) instead of subjects for grouping.
+
+### Grouping Configuration
+
+```python
+BREVO_ANALYTICS = {
+    # ... other settings ...
+    'MESSAGE_GROUP_BY': 'tag',       # Group by tag instead of subject
+    'MESSAGE_TAG_PREFIX': 'digest',  # Match tags starting with this prefix
+}
+```
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `MESSAGE_GROUP_BY` | `'subject'` | Grouping strategy: `'subject'` (default) or `'tag'` |
+| `MESSAGE_TAG_PREFIX` | `'digest'` | Prefix to identify the grouping tag (only used when `MESSAGE_GROUP_BY = 'tag'`) |
+
+### Tag Format Convention
+
+The sending application should set tags following a `{prefix}:{id}:{display_title}` convention:
+
+```python
+# Example using django-anymail
+message = EmailMultiAlternatives(subject="Report - Acme Corp", ...)
+message.tags = [
+    "digest:42:Weekly Report 2024-09-17",  # Grouping tag
+    "customer:15:Acme Corp",                # Optional extra tag
+]
+message.send()
+```
+
+- **`prefix`** — matches `MESSAGE_TAG_PREFIX` (e.g. `digest`)
+- **`id`** — unique identifier for the logical send (prevents collisions on same-day sends with identical titles)
+- **`display_title`** — human-readable title shown in the dashboard
+
+### How It Works
+
+1. Tags are extracted from the Brevo webhook payload or CSV export
+2. All tags are stored on `BrevoEmail.tags` (regardless of grouping mode)
+3. When `MESSAGE_GROUP_BY = 'tag'`:
+   - The first tag matching the configured prefix is used as the `BrevoMessage.subject`
+   - If no matching tag is found, falls back to the email subject (graceful degradation)
+4. The API returns both `subject` (raw) and `display_subject` (human-readable, with prefix and ID stripped)
+
+### Backward Compatibility
+
+- Default behaviour is completely unchanged (`MESSAGE_GROUP_BY` defaults to `'subject'`)
+- Existing installations require no configuration changes
+- The `BrevoMessage` model is unchanged — no new fields, constraints, or migrations on that table
+- Tags are always stored on `BrevoEmail` even in subject grouping mode, enabling future analytics
 
 ## Data Flow
 

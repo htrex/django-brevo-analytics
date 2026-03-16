@@ -1,3 +1,6 @@
+import json
+import time
+
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from django.core.management import call_command
@@ -90,6 +93,30 @@ class BrevoModelsTestCase(TestCase):
         self.assertFalse(added2)  # Should not add duplicate
         self.assertEqual(len(email.events), 1)
 
+    def test_email_tags_default(self):
+        """BrevoEmail.tags should default to an empty list"""
+        email = BrevoEmail.objects.create(
+            message=self.message,
+            brevo_message_id="<test_tags@example.com>",
+            recipient_email="tags@example.com",
+            sent_at=timezone.now()
+        )
+        self.assertIsInstance(email.tags, list)
+        self.assertEqual(email.tags, [])
+
+    def test_email_tags_stored(self):
+        """BrevoEmail.tags should store and retrieve tag arrays"""
+        tags = ["digest:42:Esito CDM 2024-09-17", "customer:15:Acme Corp"]
+        email = BrevoEmail.objects.create(
+            message=self.message,
+            brevo_message_id="<test_tags2@example.com>",
+            recipient_email="tags2@example.com",
+            sent_at=timezone.now(),
+            tags=tags
+        )
+        email.refresh_from_db()
+        self.assertEqual(email.tags, tags)
+
 
 class BlacklistOnlyModeTestCase(TestCase):
     """Tests for BLACKLIST_ONLY_MODE configuration flag"""
@@ -129,3 +156,324 @@ class BlacklistOnlyModeTestCase(TestCase):
         )
         # Should get 400 (bad request) not 404 (disabled)
         self.assertNotEqual(response.status_code, 404)
+
+
+class WebhookTagTestCase(TestCase):
+    """Tests for tag extraction, storage, and tag-based grouping in webhook"""
+
+    def _post_webhook(self, payload):
+        """Helper to post a webhook payload"""
+        return self.client.post(
+            '/brevo-analytics/webhook/',
+            data=json.dumps(payload),
+            content_type='application/json'
+        )
+
+    @override_settings(BREVO_ANALYTICS={
+        'ALLOWED_SENDERS': ['noreply@example.com'],
+        'EXCLUDED_RECIPIENT_DOMAINS': [],
+    })
+    def test_webhook_saves_tags_on_email(self):
+        """Webhook should save tags from payload onto BrevoEmail.tags"""
+        payload = {
+            'event': 'request',
+            'message-id': '<tag-test-001@example.com>',
+            'email': 'recipient@example.com',
+            'subject': 'Esito CDM 2024-09-17 - Acme Corp',
+            'ts_event': int(time.time()),
+            'sender': 'noreply@example.com',
+            'tags': ['digest:42:Esito CDM 2024-09-17', 'customer:15:Acme Corp'],
+        }
+        response = self._post_webhook(payload)
+        self.assertEqual(response.status_code, 200)
+
+        email = BrevoEmail.objects.get(
+            brevo_message_id='<tag-test-001@example.com>',
+            recipient_email='recipient@example.com'
+        )
+        self.assertEqual(email.tags, ['digest:42:Esito CDM 2024-09-17', 'customer:15:Acme Corp'])
+
+    @override_settings(BREVO_ANALYTICS={
+        'ALLOWED_SENDERS': ['noreply@example.com'],
+        'EXCLUDED_RECIPIENT_DOMAINS': [],
+    })
+    def test_webhook_saves_empty_tags_when_absent(self):
+        """Webhook should save empty list when no tags in payload"""
+        payload = {
+            'event': 'request',
+            'message-id': '<tag-test-002@example.com>',
+            'email': 'recipient2@example.com',
+            'subject': 'No tags email',
+            'ts_event': int(time.time()),
+            'sender': 'noreply@example.com',
+        }
+        response = self._post_webhook(payload)
+        self.assertEqual(response.status_code, 200)
+
+        email = BrevoEmail.objects.get(
+            brevo_message_id='<tag-test-002@example.com>',
+            recipient_email='recipient2@example.com'
+        )
+        self.assertEqual(email.tags, [])
+
+    @override_settings(BREVO_ANALYTICS={
+        'ALLOWED_SENDERS': ['noreply@example.com'],
+        'EXCLUDED_RECIPIENT_DOMAINS': [],
+        'MESSAGE_GROUP_BY': 'tag',
+        'MESSAGE_TAG_PREFIX': 'digest',
+    })
+    def test_webhook_tag_grouping_uses_tag_as_subject(self):
+        """When MESSAGE_GROUP_BY='tag', matching tag should be used as BrevoMessage.subject"""
+        payload = {
+            'event': 'request',
+            'message-id': '<tag-group-001@example.com>',
+            'email': 'client1@example.com',
+            'subject': 'Esito CDM 2024-09-17 - Acme Corp',
+            'ts_event': int(time.time()),
+            'sender': 'noreply@example.com',
+            'tags': ['digest:42:Esito CDM 2024-09-17', 'customer:15:Acme Corp'],
+        }
+        response = self._post_webhook(payload)
+        self.assertEqual(response.status_code, 200)
+
+        email = BrevoEmail.objects.get(
+            brevo_message_id='<tag-group-001@example.com>',
+            recipient_email='client1@example.com'
+        )
+        self.assertEqual(email.message.subject, 'digest:42:Esito CDM 2024-09-17')
+
+    @override_settings(BREVO_ANALYTICS={
+        'ALLOWED_SENDERS': ['noreply@example.com'],
+        'EXCLUDED_RECIPIENT_DOMAINS': [],
+        'MESSAGE_GROUP_BY': 'tag',
+        'MESSAGE_TAG_PREFIX': 'digest',
+    })
+    def test_webhook_tag_grouping_aggregates_recipients(self):
+        """Multiple recipients with same tag should share one BrevoMessage"""
+        ts = int(time.time())
+
+        for i, client_name in enumerate(['Acme Corp', 'Beta Ltd', 'Gamma Inc']):
+            payload = {
+                'event': 'request',
+                'message-id': f'<tag-agg-{i:03d}@example.com>',
+                'email': f'client{i}@example.com',
+                'subject': f'Esito CDM 2024-09-17 - {client_name}',
+                'ts_event': ts,
+                'sender': 'noreply@example.com',
+                'tags': ['digest:42:Esito CDM 2024-09-17', f'customer:{i}:{client_name}'],
+            }
+            self._post_webhook(payload)
+
+        messages = BrevoMessage.objects.filter(subject='digest:42:Esito CDM 2024-09-17')
+        self.assertEqual(messages.count(), 1)
+        self.assertEqual(messages.first().emails.count(), 3)
+
+    @override_settings(BREVO_ANALYTICS={
+        'ALLOWED_SENDERS': ['noreply@example.com'],
+        'EXCLUDED_RECIPIENT_DOMAINS': [],
+        'MESSAGE_GROUP_BY': 'tag',
+        'MESSAGE_TAG_PREFIX': 'digest',
+    })
+    def test_webhook_tag_grouping_fallback_to_subject(self):
+        """When no tag matches the prefix, fall back to email subject"""
+        payload = {
+            'event': 'request',
+            'message-id': '<tag-fallback-001@example.com>',
+            'email': 'nontag@example.com',
+            'subject': 'Password reset',
+            'ts_event': int(time.time()),
+            'sender': 'noreply@example.com',
+            'tags': ['transactional:password_reset'],
+        }
+        response = self._post_webhook(payload)
+        self.assertEqual(response.status_code, 200)
+
+        email = BrevoEmail.objects.get(
+            brevo_message_id='<tag-fallback-001@example.com>',
+            recipient_email='nontag@example.com'
+        )
+        self.assertEqual(email.message.subject, 'Password reset')
+
+    @override_settings(BREVO_ANALYTICS={
+        'ALLOWED_SENDERS': ['noreply@example.com'],
+        'EXCLUDED_RECIPIENT_DOMAINS': [],
+    })
+    def test_webhook_default_subject_grouping_unchanged(self):
+        """Default behaviour (no MESSAGE_GROUP_BY) should use email subject"""
+        payload = {
+            'event': 'request',
+            'message-id': '<default-group-001@example.com>',
+            'email': 'default@example.com',
+            'subject': 'Esito CDM 2024-09-17 - Acme Corp',
+            'ts_event': int(time.time()),
+            'sender': 'noreply@example.com',
+            'tags': ['digest:42:Esito CDM 2024-09-17'],
+        }
+        response = self._post_webhook(payload)
+        self.assertEqual(response.status_code, 200)
+
+        email = BrevoEmail.objects.get(
+            brevo_message_id='<default-group-001@example.com>',
+            recipient_email='default@example.com'
+        )
+        self.assertEqual(email.message.subject, 'Esito CDM 2024-09-17 - Acme Corp')
+
+
+class DisplaySubjectTestCase(TestCase):
+    """Tests for display_subject computed field in serializers"""
+
+    @override_settings(BREVO_ANALYTICS={
+        'MESSAGE_GROUP_BY': 'tag',
+        'MESSAGE_TAG_PREFIX': 'digest',
+    })
+    def test_display_subject_strips_prefix_and_id(self):
+        """display_subject should strip '{prefix}:{id}:' from tag-based subjects"""
+        from brevo_analytics.serializers import BrevoMessageSerializer
+        message = BrevoMessage.objects.create(
+            subject='digest:42:Esito CDM 2024-09-17',
+            sent_date=timezone.now().date()
+        )
+        serializer = BrevoMessageSerializer(message)
+        self.assertEqual(serializer.data['display_subject'], 'Esito CDM 2024-09-17')
+
+    @override_settings(BREVO_ANALYTICS={
+        'MESSAGE_GROUP_BY': 'tag',
+        'MESSAGE_TAG_PREFIX': 'digest',
+    })
+    def test_display_subject_non_tag_subject_unchanged(self):
+        """display_subject should return subject unchanged if it doesn't match the prefix"""
+        from brevo_analytics.serializers import BrevoMessageSerializer
+        message = BrevoMessage.objects.create(
+            subject='Password reset notification',
+            sent_date=timezone.now().date()
+        )
+        serializer = BrevoMessageSerializer(message)
+        self.assertEqual(serializer.data['display_subject'], 'Password reset notification')
+
+    @override_settings(BREVO_ANALYTICS={})
+    def test_display_subject_in_default_mode_equals_subject(self):
+        """In default subject grouping mode, display_subject == subject"""
+        from brevo_analytics.serializers import BrevoMessageSerializer
+        message = BrevoMessage.objects.create(
+            subject='Normal subject line',
+            sent_date=timezone.now().date()
+        )
+        serializer = BrevoMessageSerializer(message)
+        self.assertEqual(serializer.data['display_subject'], 'Normal subject line')
+
+    @override_settings(BREVO_ANALYTICS={
+        'MESSAGE_GROUP_BY': 'tag',
+        'MESSAGE_TAG_PREFIX': 'digest',
+    })
+    def test_display_subject_with_colons_in_title(self):
+        """display_subject should handle titles containing colons"""
+        from brevo_analytics.serializers import BrevoMessageSerializer
+        message = BrevoMessage.objects.create(
+            subject='digest:42:Esito CDM: seduta del 17/09',
+            sent_date=timezone.now().date()
+        )
+        serializer = BrevoMessageSerializer(message)
+        self.assertEqual(serializer.data['display_subject'], 'Esito CDM: seduta del 17/09')
+
+
+class ImportTagTestCase(TestCase):
+    """Tests for tag support in CSV import command"""
+
+    def _create_csv(self, rows):
+        """Create a temporary CSV file with the given rows.
+
+        Each row is a dict with keys: st_text, ts, sub, frm, email, tag, mid, link
+        """
+        import csv
+        import os
+        import tempfile
+        f = tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, newline='')
+        writer = csv.DictWriter(f, fieldnames=['st_text', 'ts', 'sub', 'frm', 'email', 'tag', 'mid', 'link'])
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+        f.close()
+        return f.name
+
+    @override_settings(BREVO_ANALYTICS={
+        'ALLOWED_SENDERS': ['noreply@example.com'],
+        'EXCLUDED_RECIPIENT_DOMAINS': [],
+    })
+    def test_import_stores_tag_on_email(self):
+        """CSV import should store the tag column value in BrevoEmail.tags"""
+        import os
+        csv_path = self._create_csv([
+            {
+                'st_text': 'Inviata', 'ts': '17-09-2024 10:00:00',
+                'sub': 'Esito CDM - Acme', 'frm': 'noreply@example.com',
+                'email': 'acme@example.com', 'tag': 'digest:42:Esito CDM 2024-09-17',
+                'mid': '<import-tag-001@example.com>', 'link': '',
+            },
+        ])
+        try:
+            call_command('import_brevo_logs', csv_path, stdout=StringIO())
+            email = BrevoEmail.objects.get(
+                brevo_message_id='import-tag-001@example.com',
+                recipient_email='acme@example.com'
+            )
+            self.assertEqual(email.tags, ['digest:42:Esito CDM 2024-09-17'])
+        finally:
+            os.unlink(csv_path)
+
+    @override_settings(BREVO_ANALYTICS={
+        'ALLOWED_SENDERS': ['noreply@example.com'],
+        'EXCLUDED_RECIPIENT_DOMAINS': [],
+        'MESSAGE_GROUP_BY': 'tag',
+        'MESSAGE_TAG_PREFIX': 'digest',
+    })
+    def test_import_tag_grouping(self):
+        """CSV import with MESSAGE_GROUP_BY='tag' should group by matching tag"""
+        import os
+        csv_path = self._create_csv([
+            {
+                'st_text': 'Inviata', 'ts': '17-09-2024 10:00:00',
+                'sub': 'Esito CDM - Acme', 'frm': 'noreply@example.com',
+                'email': 'acme@example.com', 'tag': 'digest:42:Esito CDM 2024-09-17',
+                'mid': '<import-grp-001@example.com>', 'link': '',
+            },
+            {
+                'st_text': 'Inviata', 'ts': '17-09-2024 10:01:00',
+                'sub': 'Esito CDM - Beta', 'frm': 'noreply@example.com',
+                'email': 'beta@example.com', 'tag': 'digest:42:Esito CDM 2024-09-17',
+                'mid': '<import-grp-002@example.com>', 'link': '',
+            },
+        ])
+        try:
+            call_command('import_brevo_logs', csv_path, stdout=StringIO())
+            messages = BrevoMessage.objects.filter(subject='digest:42:Esito CDM 2024-09-17')
+            self.assertEqual(messages.count(), 1)
+            self.assertEqual(messages.first().emails.count(), 2)
+        finally:
+            os.unlink(csv_path)
+
+    @override_settings(BREVO_ANALYTICS={
+        'ALLOWED_SENDERS': ['noreply@example.com'],
+        'EXCLUDED_RECIPIENT_DOMAINS': [],
+        'MESSAGE_GROUP_BY': 'tag',
+        'MESSAGE_TAG_PREFIX': 'digest',
+    })
+    def test_import_tag_grouping_fallback(self):
+        """CSV import with tag grouping should fall back to subject when no matching tag"""
+        import os
+        csv_path = self._create_csv([
+            {
+                'st_text': 'Inviata', 'ts': '17-09-2024 10:00:00',
+                'sub': 'Password reset', 'frm': 'noreply@example.com',
+                'email': 'user@example.com', 'tag': '',
+                'mid': '<import-fb-001@example.com>', 'link': '',
+            },
+        ])
+        try:
+            call_command('import_brevo_logs', csv_path, stdout=StringIO())
+            email = BrevoEmail.objects.get(
+                brevo_message_id='import-fb-001@example.com',
+                recipient_email='user@example.com'
+            )
+            self.assertEqual(email.message.subject, 'Password reset')
+        finally:
+            os.unlink(csv_path)

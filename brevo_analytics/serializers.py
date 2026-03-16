@@ -1,18 +1,44 @@
+from django.conf import settings
 from rest_framework import serializers
 from .models import BrevoMessage, BrevoEmail
 
 
+def _display_subject(raw_subject):
+    """Strip tag prefix and ID from subject when in tag grouping mode.
+
+    When MESSAGE_GROUP_BY='tag', subjects look like '{prefix}:{id}:{title}'.
+    This returns just the '{title}' portion. In default mode, returns subject unchanged.
+    """
+    config = getattr(settings, 'BREVO_ANALYTICS', {})
+    if config.get('MESSAGE_GROUP_BY') == 'tag':
+        prefix = config.get('MESSAGE_TAG_PREFIX', 'digest')
+        tag_prefix = f"{prefix}:"
+        if raw_subject.startswith(tag_prefix):
+            remainder = raw_subject[len(tag_prefix):]
+            # Strip the ID portion: "{id}:{display_title}"
+            if ':' in remainder:
+                return remainder.split(':', 1)[1]
+            return remainder
+    return raw_subject
+
+
 class BrevoMessageSerializer(serializers.ModelSerializer):
     """Serializer per lista messaggi"""
+    display_subject = serializers.SerializerMethodField()
+
     class Meta:
         model = BrevoMessage
         fields = [
-            'id', 'subject', 'sent_date',
+            'id', 'subject', 'display_subject', 'sent_date',
             'total_sent', 'total_delivered', 'total_opened',
             'total_clicked', 'total_bounced', 'total_blocked',
             'delivery_rate', 'open_rate', 'click_rate',
             'updated_at'
         ]
+
+    def get_display_subject(self, obj):
+        """Return human-readable subject, stripping tag prefix and ID when in tag grouping mode."""
+        return _display_subject(obj.subject)
 
 
 class BrevoEmailListSerializer(serializers.ModelSerializer):
@@ -39,6 +65,7 @@ class BrevoEmailDetailSerializer(serializers.ModelSerializer):
         return {
             'id': obj.message.id,
             'subject': obj.message.subject,
+            'display_subject': _display_subject(obj.message.subject),
             'sent_date': obj.message.sent_date.isoformat()
         }
 
@@ -63,5 +90,6 @@ class GlobalBrevoEmailsSerializer(serializers.ModelSerializer):
     def get_message(self, obj):
         return {
             'subject': obj.message.subject,
+            'display_subject': _display_subject(obj.message.subject),
             'sent_date': obj.message.sent_date.isoformat()
         }

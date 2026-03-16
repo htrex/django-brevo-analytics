@@ -65,6 +65,7 @@ def brevo_webhook(request):
     message_id = payload.get('message-id')
     email_address = payload.get('email')
     subject = payload.get('subject', '')
+    tags = payload.get('tags', [])
     timestamp_unix = payload.get('ts_event')
     sender = payload.get('sender') or payload.get('from') or payload.get('sender_email', '')  # Brevo uses 'sender_email' in some events
 
@@ -105,7 +106,8 @@ def brevo_webhook(request):
 
     # Convert timestamp
     try:
-        event_datetime = datetime.fromtimestamp(timestamp_unix, tz=timezone.utc)
+        from datetime import timezone as dt_timezone
+        event_datetime = datetime.fromtimestamp(timestamp_unix, tz=dt_timezone.utc)
     except (ValueError, OSError):
         logger.error(f"Invalid timestamp: {timestamp_unix}")
         return HttpResponseBadRequest('Invalid timestamp')
@@ -171,9 +173,19 @@ def brevo_webhook(request):
 
     # 3. If this is a 'sent' or 'delivered' event and email doesn't exist, create it
     if email is None and is_creation_event:
-        # Get or create BrevoMessage (identified by subject + sent_date)
+        # Determine grouping subject based on configuration
+        group_subject = subject  # default: use email subject
+
+        if config.get('MESSAGE_GROUP_BY') == 'tag' and tags:
+            prefix = config.get('MESSAGE_TAG_PREFIX', 'digest')
+            tag_prefix = f"{prefix}:"
+            group_tag = next((t for t in tags if t.startswith(tag_prefix)), None)
+            if group_tag:
+                group_subject = group_tag
+
+        # Get or create BrevoMessage (identified by group_subject + sent_date)
         message, message_created = BrevoMessage.objects.get_or_create(
-            subject=subject,
+            subject=group_subject,
             sent_date=event_date,
             defaults={
                 'total_sent': 0,
@@ -181,7 +193,7 @@ def brevo_webhook(request):
         )
 
         if message_created:
-            logger.info(f"Created new message: {subject} - {event_date}")
+            logger.info(f"Created new message: {group_subject} - {event_date}")
 
         # Determine initial status and sent_at based on event type
         if is_delivered_event:
@@ -212,7 +224,8 @@ def brevo_webhook(request):
             recipient_email=email_address,
             sent_at=event_datetime,
             current_status=initial_status,
-            events=initial_events
+            events=initial_events,
+            tags=tags,
         )
         logger.info(f"Created new email: {message_id} to {email_address} from {sender}")
 
