@@ -90,6 +90,7 @@ BREVO_ANALYTICS = {
     'API_KEY': 'your-brevo-api-key',          # Optional, for bounce enrichment
     'ALLOWED_SENDERS': [                       # Filter emails by sender
         'info@yourproject.com',
+        '@yourcompany.com',                    # Domain pattern: matches any sender
     ],
 }
 ```
@@ -177,7 +178,7 @@ Compares local statistics with Brevo API to ensure data accuracy.
 ### Optional
 
 - `API_KEY`: Brevo API key for bounce enrichment and blacklist management
-- `ALLOWED_SENDERS`: List of sender emails to filter (for multi-client accounts)
+- `ALLOWED_SENDERS`: List of sender emails or domain patterns to filter (for multi-client accounts). Values starting with `@` match any sender from that domain (e.g., `'@yourcompany.com'`)
 - `EXCLUDED_RECIPIENT_DOMAINS`: List of email domains to exclude from analytics (e.g., internal/test domains)
 - `MESSAGE_GROUP_BY`: Grouping strategy — `'subject'` (default) or `'tag'` (see [Tag-Based Message Grouping](#tag-based-message-grouping))
 - `MESSAGE_TAG_PREFIX`: Tag prefix for grouping (default: `'digest'`, only used when `MESSAGE_GROUP_BY = 'tag'`)
@@ -251,7 +252,8 @@ Brevo → Webhook → Django Model → PostgreSQL
 ## Multi-Client Support
 
 For shared Brevo accounts, use `ALLOWED_SENDERS` to filter:
-- Emails with matching sender: always included
+- **Exact emails** (`'info@yourproject.com'`): match that address only (case-insensitive)
+- **Domain patterns** (`'@yourcompany.com'`): match any sender from that domain (case-insensitive)
 - Emails without sender info: included only if in local database
 - This prevents showing other clients' data
 

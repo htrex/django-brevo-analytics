@@ -205,7 +205,10 @@ BREVO_ANALYTICS = {
     'API_KEY': 'your-brevo-api-key',               # Optional: for bounce enrichment
 
     # CRITICAL: Multi-tenant security - only process events from your senders
-    'ALLOWED_SENDERS': ['info@infoparlamento.it'], # REQUIRED: Your authorized sender email(s)
+    'ALLOWED_SENDERS': [                          # REQUIRED: Your authorized sender email(s)
+        'info@infoparlamento.it',
+        '@cominandpartners.com',                   # Domain pattern: matches any sender
+    ],
 
     # Exclude internal test/error emails
     'EXCLUDED_RECIPIENT_DOMAINS': [                # Exclude internal domains
@@ -337,6 +340,7 @@ Database tables are unused in this mode. Use Blacklist Management to access data
 ```
 brevo_analytics/
 ├── models.py                    # Django models (BrevoMessage, Email)
+├── sender_utils.py              # Shared ALLOWED_SENDERS matching utilities
 ├── admin.py                     # Django admin registration + SPA view
 ├── serializers.py               # DRF serializers
 ├── api_views.py                 # DRF API endpoints
@@ -394,7 +398,7 @@ Root files:
 
 7. **Internal Domain Filtering**: Emails sent to internal domains (configurable via `EXCLUDED_RECIPIENT_DOMAINS`) are automatically excluded from import, webhooks, and queries. This prevents internal error notifications and test emails from skewing production statistics.
 
-8. **Multi-Tenant Security**: Sender filtering (`ALLOWED_SENDERS`) prevents webhook events and data from other clients on shared Brevo accounts from contaminating your analytics. All queries automatically filter by authorized senders.
+8. **Multi-Tenant Security**: Sender filtering (`ALLOWED_SENDERS`) prevents webhook events and data from other clients on shared Brevo accounts from contaminating your analytics. All queries automatically filter by authorized senders. Supports both exact emails (`'info@example.com'`) and domain patterns (`'@company.com'`).
 
 ## Common Development Tasks
 

@@ -7,6 +7,7 @@ from django.conf import settings
 from django.utils import timezone
 from datetime import datetime
 from .models import BrevoMessage, BrevoEmail
+from .sender_utils import get_allowed_senders, is_sender_allowed
 
 logger = logging.getLogger(__name__)
 
@@ -74,13 +75,10 @@ def brevo_webhook(request):
         return HttpResponseBadRequest('Missing required fields')
 
     # CRITICAL: Verify sender is authorized (multi-tenant security)
-    allowed_senders = config.get('ALLOWED_SENDERS', ['info@infoparlamento.it'])
-    if isinstance(allowed_senders, str):
-        allowed_senders = [allowed_senders]
+    allowed_senders = get_allowed_senders()
 
     if allowed_senders and sender:
-        sender_lower = sender.lower()
-        if not any(allowed.lower() == sender_lower for allowed in allowed_senders):
+        if not is_sender_allowed(sender, allowed_senders):
             logger.warning(
                 f"Ignoring webhook event from unauthorized sender: {sender} "
                 f"(allowed: {', '.join(allowed_senders)})"

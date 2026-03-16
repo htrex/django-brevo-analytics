@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-03-16
+
+### Added
+
+- **Domain-Based Sender Matching**: Enhanced `ALLOWED_SENDERS` configuration to support domain patterns in addition to exact email addresses
+  - Domain patterns use `@domain.com` format to match any sender from that domain
+  - Example: `'@yourcompany.com'` matches `info@yourcompany.com`, `noreply@yourcompany.com`, etc.
+  - Exact email addresses (`'info@example.com'`) continue to work as before
+  - Case-insensitive matching for both exact addresses and domain patterns
+  - Fully backward compatible with existing configurations
+- **Centralized Sender Matching Logic**: New `sender_utils` module consolidates sender validation logic
+  - Shared utilities used consistently across webhook processing, ORM queries, and API responses
+  - Function `matches_allowed_senders()` handles both exact and domain-based matching
+  - Improved code maintainability and consistency across the package
+
+### Changed
+
+- **Sender Filtering Architecture**: Refactored sender validation to use centralized `sender_utils` module
+  - Webhook handler now uses `matches_allowed_senders()` for sender validation
+  - `BrevoEmailManager` ORM queries now use `matches_allowed_senders()` for database filtering
+  - Blacklist API endpoints now use `matches_allowed_senders()` for multi-client filtering
+  - Eliminated code duplication and hardcoded default senders across codebase
+- **Multi-Tenant Security**: Enhanced sender filtering applies to all data access points
+  - Domain patterns improve security for organizations with multiple sending addresses
+  - More flexible configuration for shared Brevo accounts with multiple sender addresses
+
+### Technical Details
+
+- Added 28 new tests covering domain pattern matching in webhook, ORM, and API contexts
+- Removed hardcoded `['info@infoparlamento.it']` default from webhook handler
+- Removed hardcoded `'info@infoparlamento.it'` default from ORM manager
+- Centralized configuration ensures consistent behavior across all package components
+- All tests pass, no breaking changes to existing functionality
+
 ## [0.6.0] - 2026-03-16
 
 ### Added

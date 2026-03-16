@@ -6,6 +6,7 @@ from django.conf import settings
 import requests
 from urllib.parse import quote
 from .models import BrevoMessage, BrevoEmail
+from .sender_utils import get_allowed_senders, is_sender_allowed
 from .serializers import (
     BrevoMessageSerializer,
     BrevoEmailListSerializer,
@@ -195,11 +196,8 @@ def email_detail_api(request, email_id):
                             # Verify this contact belongs to our client:
                             # - If senderEmail matches ALLOWED_SENDERS: it's ours
                             # - If senderEmail is empty/None: check if in local DB (email object already loaded)
-                            allowed_senders = brevo_config.get('ALLOWED_SENDERS', [])
+                            allowed_senders = get_allowed_senders()
                             if allowed_senders:
-                                if isinstance(allowed_senders, str):
-                                    allowed_senders = [allowed_senders]
-
                                 contact_senders = contact.get('senderEmail', [])
                                 if isinstance(contact_senders, str):
                                     contact_senders = [contact_senders]
@@ -207,7 +205,9 @@ def email_detail_api(request, email_id):
                                     contact_senders = []
 
                                 # Check if any of the contact's senders match our allowed list
-                                has_our_sender = any(sender in allowed_senders for sender in contact_senders)
+                                has_our_sender = any(
+                                    is_sender_allowed(s, allowed_senders) for s in contact_senders
+                                )
 
                                 # If no sender, we already have the email in DB (we're viewing its detail)
                                 # So it's definitely ours
@@ -321,11 +321,8 @@ def check_blacklist_status_api(request, email_address):
         # Verify this contact belongs to our client:
         # - If senderEmail matches ALLOWED_SENDERS: it's ours
         # - If senderEmail is empty/None: check if in local DB
-        allowed_senders = brevo_config.get('ALLOWED_SENDERS', [])
+        allowed_senders = get_allowed_senders()
         if allowed_senders:
-            if isinstance(allowed_senders, str):
-                allowed_senders = [allowed_senders]
-
             contact_senders = matching_contact.get('senderEmail', [])
             if isinstance(contact_senders, str):
                 contact_senders = [contact_senders]
@@ -333,7 +330,9 @@ def check_blacklist_status_api(request, email_address):
                 contact_senders = []
 
             # Check if any of the contact's senders match our allowed list
-            has_our_sender = any(sender in allowed_senders for sender in contact_senders)
+            has_our_sender = any(
+                is_sender_allowed(s, allowed_senders) for s in contact_senders
+            )
 
             # If no sender, check if email is in our local database
             if not has_our_sender and len(contact_senders) == 0:
@@ -551,11 +550,8 @@ def list_blacklist_api(request):
         # Filter by allowed senders OR local database:
         # - If senderEmail matches ALLOWED_SENDERS: include (even if old, not in DB)
         # - If senderEmail is empty/None: include only if in local DB (to exclude other clients)
-        allowed_senders = brevo_config.get('ALLOWED_SENDERS', [])
+        allowed_senders = get_allowed_senders()
         if allowed_senders:
-            if isinstance(allowed_senders, str):
-                allowed_senders = [allowed_senders]
-
             # Get all local emails for filtering contacts without sender
             local_emails = set(
                 BrevoEmail.objects.values_list('recipient_email', flat=True)
@@ -570,12 +566,12 @@ def list_blacklist_api(request):
                 # senderEmail is always a list now (normalized above)
                 if isinstance(sender_emails, list):
                     # Has sender from our allowed list: always include
-                    if any(sender in allowed_senders for sender in sender_emails):
+                    if any(is_sender_allowed(s, allowed_senders) for s in sender_emails):
                         filtered_contacts.append(contact)
                     # No sender (or empty list): include only if in local DB
                     elif len(sender_emails) == 0 and contact_email in local_emails_lower:
                         filtered_contacts.append(contact)
-                elif sender_emails in allowed_senders:
+                elif is_sender_allowed(sender_emails, allowed_senders):
                     # Fallback for non-list (shouldn't happen after normalization)
                     filtered_contacts.append(contact)
 
@@ -727,11 +723,8 @@ def enrich_blocked_emails_api(request):
                     # Verify this contact belongs to our client:
                     # - If senderEmail matches ALLOWED_SENDERS: it's ours
                     # - If senderEmail is empty/None: it's ours (we're enriching local DB emails)
-                    allowed_senders = brevo_config.get('ALLOWED_SENDERS', [])
+                    allowed_senders = get_allowed_senders()
                     if allowed_senders:
-                        if isinstance(allowed_senders, str):
-                            allowed_senders = [allowed_senders]
-
                         contact_senders = matching.get('senderEmail', [])
                         if isinstance(contact_senders, str):
                             contact_senders = [contact_senders]
@@ -739,7 +732,9 @@ def enrich_blocked_emails_api(request):
                             contact_senders = []
 
                         # Check if any of the contact's senders match our allowed list
-                        has_our_sender = any(sender in allowed_senders for sender in contact_senders)
+                        has_our_sender = any(
+                            is_sender_allowed(s, allowed_senders) for s in contact_senders
+                        )
 
                         # If no sender, it's ours (we're processing emails from our local DB)
                         # If has senders but not ours, skip

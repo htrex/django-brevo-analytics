@@ -9,6 +9,7 @@ from django.core.management.base import BaseCommand
 from django.conf import settings
 from django.db import transaction
 from brevo_analytics.models import BrevoMessage, BrevoEmail
+from brevo_analytics.sender_utils import get_allowed_senders
 
 
 class Command(BaseCommand):
@@ -31,11 +32,7 @@ class Command(BaseCommand):
         clean = options['clean']
 
         # Get allowed senders from configuration
-        brevo_config = getattr(settings, 'BREVO_ANALYTICS', {})
-        allowed_senders = brevo_config.get('ALLOWED_SENDERS', ['info@infoparlamento.it'])
-
-        if isinstance(allowed_senders, str):
-            allowed_senders = [allowed_senders]
+        allowed_senders = get_allowed_senders()
 
         if not allowed_senders:
             self.stdout.write(self.style.WARNING("No ALLOWED_SENDERS configured. Cannot verify."))
