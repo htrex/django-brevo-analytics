@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-03-16
+
 ### Added
 
 - **Tag-Based Message Grouping**: Optional grouping strategy that uses Brevo tags instead of email subjects
@@ -20,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Graceful fallback: when no matching tag found, uses email subject (same as default mode)
   - Full backward compatibility: no changes to BrevoMessage model, no migration on that table
   - New migration 0007: adds `tags` JSONField to BrevoEmail (default=list)
+- **Standalone Test Infrastructure**: Added `test_settings.py` and `runtests.py` for running tests without external Django project
+  - Enables `python runtests.py` for local development and CI/CD
+  - Self-contained test configuration with SQLite database
+  - Simplifies contributor onboarding and automated testing
 
 ### Fixed
 

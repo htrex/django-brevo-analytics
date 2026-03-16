@@ -398,7 +398,18 @@ Root files:
 
 ## Common Development Tasks
 
-### Running Tests in Development Project
+### Running Tests
+
+**Standalone test runner (recommended for local development):**
+
+```bash
+cd /home/gu/Workspace/lab.prototypes/brevo-analytics
+python runtests.py
+```
+
+This uses the standalone test configuration in `test_settings.py` with SQLite, no external Django project required.
+
+**Alternative: Testing in development project:**
 
 ```bash
 cd ~/Workspace/infoparlamento
