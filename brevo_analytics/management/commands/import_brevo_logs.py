@@ -277,7 +277,13 @@ class Command(BaseCommand):
                         tag_prefix = f"{prefix}:"
                         group_tag = next((t for t in tags if t.startswith(tag_prefix)), None)
                         if group_tag:
-                            group_subject = group_tag
+                            # Tag format: prefix:id:subject — extract just the subject
+                            remainder = group_tag[len(tag_prefix):]
+                            colon_pos = remainder.find(':')
+                            if colon_pos >= 0:
+                                group_subject = remainder[colon_pos + 1:]
+                            else:
+                                group_subject = remainder
 
                     # Get or create BrevoMessage
                     message_key = (group_subject, sent_date)
