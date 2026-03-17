@@ -246,7 +246,7 @@ class WebhookTagTestCase(TestCase):
             brevo_message_id='<tag-group-001@example.com>',
             recipient_email='client1@example.com'
         )
-        self.assertEqual(email.message.subject, 'digest:42:Esito CDM 2024-09-17')
+        self.assertEqual(email.message.subject, 'Esito CDM 2024-09-17')
 
     @override_settings(BREVO_ANALYTICS={
         'ALLOWED_SENDERS': ['noreply@example.com'],
@@ -270,7 +270,7 @@ class WebhookTagTestCase(TestCase):
             }
             self._post_webhook(payload)
 
-        messages = BrevoMessage.objects.filter(subject='digest:42:Esito CDM 2024-09-17')
+        messages = BrevoMessage.objects.filter(subject='Esito CDM 2024-09-17')
         self.assertEqual(messages.count(), 1)
         self.assertEqual(messages.first().emails.count(), 3)
 
@@ -323,6 +323,59 @@ class WebhookTagTestCase(TestCase):
             recipient_email='default@example.com'
         )
         self.assertEqual(email.message.subject, 'Esito CDM 2024-09-17 - Acme Corp')
+
+    @override_settings(BREVO_ANALYTICS={
+        'ALLOWED_SENDERS': ['noreply@example.com'],
+        'EXCLUDED_RECIPIENT_DOMAINS': [],
+        'MESSAGE_GROUP_BY': 'tag',
+        'MESSAGE_TAG_PREFIX': 'digest',
+    })
+    def test_webhook_tag_subject_with_colons(self):
+        """Tag extraction should handle colons in the subject correctly"""
+        payload = {
+            'event': 'request',
+            'message-id': '<tag-colon-001@example.com>',
+            'email': 'colon@example.com',
+            'subject': 'Esito CDM: riunione del 18 febbraio - Acme',
+            'ts_event': int(time.time()),
+            'sender': 'noreply@example.com',
+            'tags': ['digest:42:Esito CDM: riunione del 18 febbraio', 'customer:15:Acme'],
+        }
+        response = self._post_webhook(payload)
+        self.assertEqual(response.status_code, 200)
+
+        email = BrevoEmail.objects.get(
+            brevo_message_id='<tag-colon-001@example.com>',
+            recipient_email='colon@example.com'
+        )
+        self.assertEqual(email.message.subject, 'Esito CDM: riunione del 18 febbraio')
+
+    @override_settings(BREVO_ANALYTICS={
+        'ALLOWED_SENDERS': ['noreply@example.com'],
+        'EXCLUDED_RECIPIENT_DOMAINS': [],
+        'MESSAGE_GROUP_BY': 'tag',
+        'MESSAGE_TAG_PREFIX': 'digest',
+    })
+    def test_webhook_tag_without_id(self):
+        """Tag with prefix but no id:subject structure should use remainder as subject"""
+        payload = {
+            'event': 'request',
+            'message-id': '<tag-noid-001@example.com>',
+            'email': 'noid@example.com',
+            'subject': 'Some email subject',
+            'ts_event': int(time.time()),
+            'sender': 'noreply@example.com',
+            'tags': ['digest:Standalone title'],
+        }
+        response = self._post_webhook(payload)
+        self.assertEqual(response.status_code, 200)
+
+        email = BrevoEmail.objects.get(
+            brevo_message_id='<tag-noid-001@example.com>',
+            recipient_email='noid@example.com'
+        )
+        # No colon after prefix removal → uses the remainder as-is
+        self.assertEqual(email.message.subject, 'Standalone title')
 
 
 class DisplaySubjectTestCase(TestCase):
@@ -451,7 +504,7 @@ class ImportTagTestCase(TestCase):
         ])
         try:
             call_command('import_brevo_logs', csv_path, stdout=StringIO())
-            messages = BrevoMessage.objects.filter(subject='digest:42:Esito CDM 2024-09-17')
+            messages = BrevoMessage.objects.filter(subject='Esito CDM 2024-09-17')
             self.assertEqual(messages.count(), 1)
             self.assertEqual(messages.first().emails.count(), 2)
         finally:
