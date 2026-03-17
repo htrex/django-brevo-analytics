@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-03-17
+
+### Fixed
+
+- **Dark Mode Support**: Added comprehensive dark mode support for Django admin interface
+  - CSS now uses Django admin CSS custom properties (--body-fg, --body-bg, --hairline-color, etc.)
+  - Automatic theme adaptation based on user's Django admin theme preference
+  - Improved contrast and readability in both light and dark modes
+- **KPI Card Styling**: Fixed missing border on clickable KPI cards (bounced/blocked email cards)
+  - Added proper 2px solid transparent border to `.kpi-card.clickable` class
+  - Ensures consistent card appearance and hover effects across all KPI cards
+
 ## [0.7.1] - 2026-03-17
 
 ### Fixed
