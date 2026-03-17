@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-03-17
+
+### Fixed
+
+- **Tag Subject Extraction**: Fixed bug in tag-based grouping where full tag string was stored instead of just the subject
+  - Webhook handler now correctly extracts subject from `digest:42:Subject` format (stores "Subject" instead of full tag)
+  - CSV import command now correctly extracts subject from tag format (stores "Subject" instead of full tag)
+  - Updated existing tests to reflect corrected subject extraction behavior
+  - Added 2 new test cases for edge cases: subjects containing colons and tags without ID field
+  - Affects tag-based grouping mode only (MESSAGE_GROUP_BY = 'tag')
+  - No migration required - fix applies to new data processing only
+
 ## [0.7.0] - 2026-03-16
 
 ### Added
